@@ -7,9 +7,10 @@
 (defn error
   ([pos msg]
    (error pos nil msg))
-  ([line where msg]
-   (->> (format "[line %d] Error%s: %s"
+  ([[line col] where msg]
+   (->> (format "[line %d:%d] Error%s: %s"
                 line
+                col
                 (if where (str " " where) "")
                 msg)
         println)))
@@ -81,29 +82,30 @@
 (defn tokenize [source]
   (let [at-end? (complement (partial > (count source)))]
     (loop [current 0
+           col 0
            line 1
            tokens []
-           error? false]
+           had-error? false]
       (if (at-end? current)
-        [tokens error?]
+        [had-error? tokens]
         (let [c (nth source current)
               current (inc current)]
           (case c
             (\( \) \{ \} \, \. \- \+ \; \*)
-            (recur current line
-                   (conj tokens (make-token (single-token-type c) (str c) line))
-                   error?)
+            (recur current (inc col) line
+                   (conj tokens (make-token (single-token-type c) (str c) [line col]))
+                   had-error?)
             (\= \! \< \>)
             (if-let [type (and (not (at-end? current))
                                (double-token-type (str c (nth source current))))]
               (let [lexem (str c (nth source current))
                     current (inc current)]
-                (recur current line
-                       (conj tokens (make-token type lexem line))
-                       error?))
-              (recur current line
-                     (conj tokens (make-token (single-token-type c) (str c) line))
-                     error?))
+                (recur current (inc col) line
+                       (conj tokens (make-token type lexem [line col]))
+                       had-error?))
+              (recur current (inc col) line
+                     (conj tokens (make-token (single-token-type c) (str c) [line col]))
+                     had-error?))
             \/ (if (and (not (at-end? current))
                         (double-token-type (str c (nth source current))))
                  (let [current (loop [current current]
@@ -111,59 +113,64 @@
                                          (= (nth source current) \newline))
                                    (inc current)
                                    (recur (inc current))))]
-                   (recur current (inc line) tokens error?))
-                 (recur current line
-                        (conj tokens (make-token (single-token-type c) (str c) line))
-                        error?))
+                   (recur current 0 (inc line) tokens had-error?))
+                 (recur current (inc col) line
+                        (conj tokens (make-token (single-token-type c) (str c) [line col]))
+                        had-error?))
             (\space \return \tab)
-            (recur current line tokens error?)
+            (recur current (inc col) line tokens had-error?)
             \newline
-            (recur current (inc line) tokens error?)
-            \" (let [[ok? pos line]
+            (recur current 0 (inc line) tokens had-error?)
+            \" (let [[ok? pos col line]
                      (loop [pos current
-                            line line]
+                            col* col
+                            line* line]
                        (cond (at-end? pos)
-                             (do (error line "Unterminated string.")
-                                 [false pos line])
+                             (do (error [line col] "Unterminated string.")
+                                 [false pos col* line*])
                              (= (nth source pos) \")
-                             [true pos line]
+                             [true pos col* line*]
                              :else
                              (recur (inc pos)
-                                    (if (= (nth source pos) \newline) (inc line) line))))]
+                                    (if (= (nth source pos) \newline) 0 (inc col*))
+                                    (if (= (nth source pos) \newline) (inc line*) line*))))]
                  (if ok?
-                   (recur (inc pos) line
-                          (conj tokens (make-token :string (subs source current pos) line))
-                          error?)
-                   (recur (inc pos) line tokens true)))
+                   (recur (inc pos) (inc col) line
+                          (conj tokens (make-token :string (subs source current pos) [line col]))
+                          had-error?)
+                   (recur (inc pos) (inc col) line tokens true)))
             (cond (digit? c)
-                  (let [pos (loop [pos current]
-                              (if-let [c (and (not (at-end? pos))
-                                              (nth source pos))]
-                                (if (or (digit? c) (= \. c))
-                                  (recur (inc pos))
-                                  pos)
-                                pos))]
-                    (recur (inc pos) line
-                           (conj tokens (make-token :number (Double/parseDouble (subs source (dec current) pos)) line))
-                           error?))
+                  (let [[pos col]
+                        (loop [pos current
+                               col col]
+                          (if-let [c (and (not (at-end? pos))
+                                          (nth source pos))]
+                            (if (or (digit? c) (= \. c))
+                              (recur (inc pos) (inc col))
+                              [pos col])
+                            [pos col]))]
+                    (recur pos col line
+                           (conj tokens (make-token :number (Double/parseDouble (subs source (dec current) pos)) [line col]))
+                           had-error?))
                   (alpha? c)
-                  (let [pos (loop [pos current]
-                              (if-let [c (and (not (at-end? pos))
-                                              (nth source pos))]
-                                (if (alpha-numeric? c)
-                                  (recur (inc pos))
-                                  pos)
-                                pos))
+                  (let [[pos col] (loop [pos current
+                                         col col]
+                                    (if-let [c (and (not (at-end? pos))
+                                                    (nth source pos))]
+                                      (if (alpha-numeric? c)
+                                        (recur (inc pos) (inc col))
+                                        [pos col])
+                                      [pos col]))
                         word (subs source (dec current) pos)]
-                    (recur (inc pos) line
-                           (conj tokens (make-token (keywords word :identifier) word line))
-                           error?))
+                    (recur pos col line
+                           (conj tokens (make-token (keywords word :identifier) word [line col]))
+                           had-error?))
                   :else
-                  (do (error line "Unexpected character.")
-                      (recur current line tokens true)))))))))
+                  (do (error [line col] "Unexpected character.")
+                      (recur current (inc col) line tokens true)))))))))
 
 (defn run [source]
-  (let [tokens (tokenize source)]
+  (let [[had-error? tokens] (tokenize source)]
     ))
 
 (defn run-file [file]
