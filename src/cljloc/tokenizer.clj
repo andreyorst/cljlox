@@ -124,15 +124,18 @@
   (let [[error pos col line]
         (loop [pos current
                col* (inc col)
-               line* line]
-          (cond (at-end? pos source)
-                [(compose-error source [line col] "Unterminated string.") pos col* line*]
-                (= (nth source pos) \")
-                [nil pos col* line*]
-                :else
-                (recur (inc pos)
-                       (if (= (nth source pos) \newline) 0 (inc col*))
-                       (if (= (nth source pos) \newline) (inc line*) line*))))]
+               line* line
+               escaped? false]
+          (if-let [c (and (not (at-end? pos source)) (nth source pos))]
+            (cond (or (= \\ c) (and (= \" c) escaped?))
+                  (recur (inc pos) (inc col*) line* (= \\ c))
+                  (= c \")
+                  [nil pos col* line*]
+                  :else
+                  (if (= \newline c)
+                    (recur (inc pos) 0 (inc line*) false)
+                    (recur (inc pos) (inc col*) line* false)))
+            [(compose-error source [line (dec col)] "Unterminated string.") pos col* line*]))]
     (if (some? error)
       [(inc pos) (+ col 2) line tokens (conj errors error)]
       [(inc pos) (+ col 2) line
