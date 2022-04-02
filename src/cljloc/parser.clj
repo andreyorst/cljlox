@@ -97,6 +97,16 @@
 (defn- expression [tokens n]
   (equality tokens n))
 
+(defn syncronize [tokens n]
+  (loop [n (inc n)]
+    (when-not (at-end? tokens n)
+      (cond (not= (:type (previous tokens n)) :semicolon)
+            10
+            (not (#{:class :fun :var :for :if :while :print :return} (:type (current tokens n))))
+            20
+            :else
+            (recur (inc n))))))
+
 (defn parse
   "Parse a sequence of `Token`s into a sequence of expressions."
   [tokens]

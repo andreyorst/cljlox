@@ -1,6 +1,5 @@
 (ns cljloc.ast
-  (:require [clojure.string :as str]
-            [cljloc.protocols :refer [IStringable tostring]])
+  (:require [cljloc.protocols :refer [IStringable tostring]])
   (:import [cljloc.tokenizer Token]))
 
 (defrecord Binary [left, ^Token operator, right])
@@ -39,5 +38,5 @@
 (defn tostring-expr [expr]
   (tostring expr))
 
-(defn pprint-ast [expr]
+(defn print-ast [expr]
   (println (tostring-expr expr)))
