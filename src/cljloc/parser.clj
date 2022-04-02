@@ -1,76 +1,114 @@
 (ns cljloc.parser
+  "A recursive descent parser that implements the following grammar:
+
+   expression : equality ;
+   equality   : comparison (('!=' | '==') comparison)* ;
+   comparison : term (('>' | '>=' | '<' | '<=') term)* ;
+   term       : factor (('-' | '+') factor)* ;
+   factor     : unary (('/' | '*') unary)* ;
+   unary      : ('!' | '-') unary
+              | primary ;
+   primary    : NUMBER | STRING | 'true' | 'false' | 'nil'
+              | '(' expression ')' ;"
   (:require [cljloc.ast :refer [->Binary ->Unary ->Grouping ->Literal] :as ast]
-            [cljloc.tokenizer :refer [tokenize]]))
+            [clojure.tools.logging :as log])
+  (:import [clojure.lang ExceptionInfo]))
+
+(defn- consume [tokens n type message]
+  (if (#{type} (:type (get tokens n)))
+    (inc n)
+    (throw (ex-info message {:tokens tokens
+                             :n n}))))
+
+(defn- current [tokens n]
+  (if-some [token (get tokens n)]
+    token
+    (throw (ex-info "Unfinished expression" {:tokens tokens
+                                             :n (dec n)}))))
+
+(defn at-end? [tokens n]
+  (= :eof (-> tokens (get n) :type)))
+
+(defn- previous [tokens n]
+  (current tokens (dec n)))
 
 (declare expression)
 
-(defn parse [tokens]
-  (first (expression tokens 0)))
+(defn- primary [tokens n]
+  (let [token (current tokens n)
+        n (inc n)]
+    (case (:type token)
+      :true [(->Literal true) n]
+      :false [(->Literal false) n]
+      :nil [(->Literal nil) n]
+      (:number | :string) [(->Literal (previous tokens n)) n]
+      :left_paren
+      (let [[expr n] (expression tokens n)
+            n (consume tokens n :right_paren "Expect ')' after expression.")]
+        [(->Grouping expr) n])
+      :eof
+      [:eof n]
+      (throw (ex-info "Unsupported token" {:tokens tokens :n (dec n)})))))
 
-(defn consume [tokens current type message]
-  (if (#{type} (:type (get tokens current)))
-    (inc current)
-    (throw (ex-info message {}))))
+(defn- unary [tokens n]
+  (if (#{:bang :minus} (:type (current tokens n)))
+    (let [n (inc n)
+          operator (previous tokens n)
+          [right n] (unary tokens n)]
+      [(->Unary operator right) n])
+    (primary tokens n)))
 
-(defn previous [tokens current]
-  (get tokens (dec current)))
+(defn- factor [tokens n]
+  (loop [[expr n] (unary tokens n)]
+    (if (and (not= expr :eof) (#{:slash :star} (:type (current tokens n))))
+      (let [n (inc n)
+            operator (previous tokens n)
+            [right n] (unary tokens n)]
+        (recur [(->Binary expr operator right) n]))
+      [expr n])))
 
-(defn primary [tokens current]
-  (let [token (get tokens current)
-        current (inc current)]
-    (cond
-      (= :true (:type token)) [(->Literal true) current]
-      (= :false (:type token)) [(->Literal false) current]
-      (= :nil (:type token)) [(->Literal nil) current]
-      (#{:number :string} (:type token)) [(->Literal (previous tokens current)) current]
-      (= :left_paren (:type token))
-      (let [[expr current] (expression tokens current)
-            current (consume tokens current :right_paren "Expect ')' after expression.")]
-        [(->Grouping expr) current]))))
+(defn- term [tokens n]
+  (loop [[expr n] (factor tokens n)]
+    (if (and (not= expr :eof) (#{:minus :plus} (:type (current tokens n))))
+      (let [n (inc n)
+            operator (previous tokens n)
+            [right n] (factor tokens n)]
+        (recur [(->Binary expr operator right) n]))
+      [expr n])))
 
-(defn unary [tokens current]
-  (if (#{:bang :minus} (:type (get tokens current)))
-    (let [current (inc current)
-          operator (previous tokens current)
-          [right current] (unary tokens current)]
-      [(->Unary operator right) current])
-    (primary tokens current)))
+(defn- comparison [tokens n]
+  (loop [[expr n] (term tokens n)]
+    (if (and (not= expr :eof) (#{:greater :greater_equal :less :less_equal} (:type (current tokens n))))
+      (let [n (inc n)
+            operator (previous tokens n)
+            [right n] (term tokens n)]
+        (recur [(->Binary expr operator right) n]))
+      [expr n])))
 
-(defn factor [tokens current]
-  (loop [[expr current] (unary tokens current)]
-    (if (#{:slash :star} (:type (get tokens current)))
-      (let [current (inc current)
-            operator (previous tokens current)
-            [right current] (unary tokens current)]
-        (recur [(->Binary expr operator right) current]))
-      [expr current])))
+(defn- equality [tokens n]
+  (loop [[expr n] (comparison tokens n)]
+    (if (and (not= expr :eof) (#{:bang_equal :equal_equal} (:type (current tokens n))))
+      (let [n (inc n)
+            operator (previous tokens n)
+            [right n] (comparison tokens n)]
+        (recur [(->Binary expr operator right) n]))
+      [expr n])))
 
-(defn term [tokens current]
-  (loop [[expr current] (factor tokens current)]
-    (if (#{:minus :plus} (:type (get tokens current)))
-      (let [current (inc current)
-            operator (previous tokens current)
-            [right current] (factor tokens current)]
-        (recur [(->Binary expr operator right) current]))
-      [expr current])))
+(defn- expression [tokens n]
+  (equality tokens n))
 
-(defn comparison [tokens current]
-  (loop [[expr current] (term tokens current)]
-    (if (#{:greater :greater_equal :less :less_equal} (:type (get tokens current)))
-      (let [current (inc current)
-            operator (previous tokens current)
-            [right current] (term tokens current)]
-        (recur [(->Binary expr operator right) current]))
-      [expr current])))
-
-(defn equality [tokens current]
-  (loop [[expr current] (comparison tokens current)]
-    (if (#{:bang_equal :equal_equal} (:type (get tokens current)))
-      (let [current (inc current)
-            operator (previous tokens current)
-            [right current] (comparison tokens current)]
-        (recur [(->Binary expr operator right) current]))
-      [expr current])))
-
-(defn expression [tokens current]
-  (equality tokens current))
+(defn parse
+  "Parse a sequence of `Token`s into a sequence of expressions."
+  [tokens]
+  (try
+    (loop [exprs []
+           n 0]
+      (if (< n (dec (count tokens)))
+        (let [[expr n] (expression tokens n)]
+          (recur (conj exprs expr) n))
+        exprs))
+    (catch ExceptionInfo e
+      (let [{:keys [tokens n]} (ex-data e)
+            token (get tokens n)
+            [line col] (:pos token)]
+        (log/errorf "[%s:%s] %s at '%s'" line col (ex-message e) (str token))))))

@@ -36,5 +36,8 @@
       (tostring value)
       "nil")))
 
+(defn tostring-expr [expr]
+  (tostring expr))
+
 (defn pprint-ast [expr]
-  (println (tostring expr)))
+  (println (tostring-expr expr)))

@@ -21,7 +21,7 @@
 (defrecord Token [type lexeme literal pos]
   Object
   (toString [_]
-    (format "%s %s %s" type lexeme literal))
+    (str lexeme))
   IStringable
   (tostring [_]
     (str lexeme)))
@@ -182,7 +182,7 @@
    (loop [[current col line tokens errors] [0 0 1 [] []]]
      (if (at-end? current source)
        {:errors errors
-        :tokens tokens}
+        :tokens (conj tokens (make-token :eof "EOF" [line col]))}
        (recur (tokenize source (nth source current)
                         (inc current) col line
                         tokens errors)))))
@@ -190,7 +190,7 @@
    (let [tokenizer
          (case c
            (\( \) \{ \} \, \. \- \+ \; \*) single-token
-           (\= \! \< \> \\) double-token
+           (\= \! \< \\ \>) double-token
            \/ comment-token
            (\space \return \tab \newline) space
            \" string-token

@@ -1,14 +1,22 @@
 (ns cljloc.core
-  (:require [cljloc.tokenizer :refer [tokenize]]))
+  (:require [cljloc.tokenizer :refer [tokenize]]
+            [cljloc.parser :refer [parse]]
+            [clojure.tools.logging :as log]))
 
-(defn run [source]
-  (let [{:keys [errors tokens]} (tokenize source)]
-    ))
+(defn run
+  ([source]
+   (run source nil))
+  ([source file]
+   (let [{:keys [errors tokens]} (tokenize source)]
+     (if (seq errors)
+       (doseq [error errors]
+         (if file
+           (log/errorf "%s %s" file (str error))
+           (log/errorf "%s" (str error))))
+       (parse tokens)))))
 
 (defn run-file [file]
-  ;; (run (String. (.getBytes (slurp file)) (Charset/defaultCharset)))
-  (run (slurp file))
-  )
+  (run (slurp file) file))
 
 (defn run-prompt []
   (print "> ")
