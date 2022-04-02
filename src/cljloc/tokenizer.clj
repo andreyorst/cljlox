@@ -156,7 +156,7 @@
               (recur (inc pos) (inc col))
               [pos col])
             [pos col]))]
-    [pos col line
+    [pos (inc col) line
      (conj tokens (make-token :number (Double/parseDouble (subs source (dec current) pos)) [line col]))
      errors]))
 
