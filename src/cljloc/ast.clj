@@ -1,21 +1,40 @@
 (ns cljloc.ast
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [cljloc.protocols :refer [IStringable tostring]])
+  (:import [cljloc.tokenizer Token]))
 
-(defmacro define-ast [& specs]
-  (list* 'do
-         (for [spec specs]
-           (let [[name fields] (str/split spec #"\s+:\s+")
-                 fields (->> (str/split fields #",?\s+")
-                             (partition 2)
-                             (map second)
-                             (reduce (fn [fields name]
-                                       (conj fields (symbol name)))
-                                     []))]
-             `(defrecord ~(symbol name) ~fields)))))
+(defrecord Binary [left, ^Token operator, right])
+(defrecord Unary [^Token operator, right])
+(defrecord Grouping [expression])
+(defrecord Literal [value])
 
+(extend-type Binary
+  IStringable
+  (tostring [self]
+    (format "(%s %s %s)"
+            (tostring (:operator self))
+            (tostring (:left self))
+            (tostring (:right self)))))
 
-(define-ast
-  "Binary   : Expr left, Token operator, Expr right"
-  "Grouping : Expr expression"
-  "Literal  : Object value"
-  "Unary    : Token operator, Expr right")
+(extend-type Unary
+  IStringable
+  (tostring [self]
+    (format "(%s %s)"
+            (tostring (:operator self))
+            (tostring (:right self)))))
+
+(extend-type Grouping
+  IStringable
+  (tostring [self]
+    (format "(group %s)"
+            (tostring (:expression self)))))
+
+(extend-type Literal
+  IStringable
+  (tostring [self]
+    (if-some [value (:value self)]
+      (tostring value)
+      "nil")))
+
+(defn pprint-ast [expr]
+  (println (tostring expr)))

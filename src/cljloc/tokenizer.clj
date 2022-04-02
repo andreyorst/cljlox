@@ -1,6 +1,7 @@
 (ns cljloc.tokenizer
   "Tokenizer."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [cljloc.protocols :refer [IStringable]]))
 
 (defrecord TokenizerError [line col source message]
   Object
@@ -20,7 +21,10 @@
 (defrecord Token [type lexeme literal pos]
   Object
   (toString [_]
-    (format "%s %s %s" type lexeme literal)))
+    (format "%s %s %s" type lexeme literal))
+  IStringable
+  (tostring [_]
+    (str lexeme)))
 
 (defn- make-token
   ([type lexeme pos]
