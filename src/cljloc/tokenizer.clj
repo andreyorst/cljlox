@@ -142,9 +142,10 @@
             [(compose-error source [line (dec col)] "Unterminated string.") pos col* line*]))]
     (if (some? error)
       [(inc pos) (+ col 2) line tokens (conj errors error)]
-      [(inc pos) (+ col 2) line
-       (conj tokens (make-token :string (subs source current pos) [line col]))
-       errors])))
+      (let [str (subs source current pos)]
+        [(inc pos) (+ col 2) line
+         (conj tokens (make-token :string str str [line col]))
+         errors]))))
 
 (defn- number-token [source _ current col line tokens errors]
   (let [[pos col]
@@ -156,9 +157,10 @@
               (recur (inc pos) (inc col))
               [pos col])
             [pos col]))]
-    [pos (inc col) line
-     (conj tokens (make-token :number (Double/parseDouble (subs source (dec current) pos)) [line col]))
-     errors]))
+    (let [num (subs source (dec current) pos)]
+      [pos (inc col) line
+       (conj tokens (make-token :number num (parse-double num) [line col]))
+       errors])))
 
 (defn- identifier-token [source _ current col line tokens errors]
   (let [[pos col*]

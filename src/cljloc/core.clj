@@ -1,8 +1,8 @@
 (ns cljloc.core
   (:require [cljloc.tokenizer :refer [tokenize]]
             [cljloc.parser :refer [parse]]
-            [cljloc.ast :refer [print-ast]]
-            [clojure.tools.logging :as log]))
+            [clojure.tools.logging :as log]
+            [cljloc.evaluator :refer [evaluate]]))
 
 (defn run
   ([source]
@@ -15,7 +15,7 @@
            (log/errorf "%s %s" file (str error))
            (log/errorf "%s" (str error))))
        (doseq [expr (parse tokens)]
-         (print-ast expr))))))
+         (println (evaluate expr)))))))
 
 (defn run-file [file]
   (run (slurp file) file))

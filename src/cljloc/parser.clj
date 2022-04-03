@@ -14,17 +14,20 @@
             [clojure.tools.logging :as log])
   (:import [clojure.lang ExceptionInfo]))
 
+(defn- parse-error
+  ([message] (parse-error message {}))
+  ([message data]
+   (throw (ex-info message (assoc data :type :parse-error)))))
+
 (defn- consume [tokens n type message]
   (if (#{type} (:type (get tokens n)))
     (inc n)
-    (throw (ex-info message {:tokens tokens
-                             :n n}))))
+    (parse-error message {:tokens tokens :n n})))
 
 (defn- current [tokens n]
   (if-some [token (get tokens n)]
     token
-    (throw (ex-info "Unfinished expression" {:tokens tokens
-                                             :n (dec n)}))))
+    (parse-error "Unfinished expression" {:tokens tokens :n (dec n)})))
 
 (defn at-end? [tokens n]
   (= :eof (-> tokens (get n) :type)))
@@ -41,14 +44,14 @@
       :true [(->Literal true) n]
       :false [(->Literal false) n]
       :nil [(->Literal nil) n]
-      (:number | :string) [(->Literal (previous tokens n)) n]
+      (:number | :string) [(->Literal (:literal (previous tokens n))) n]
       :left_paren
       (let [[expr n] (expression tokens n)
             n (consume tokens n :right_paren "Expect ')' after expression.")]
         [(->Grouping expr) n])
       :eof
       [:eof n]
-      (throw (ex-info "Unsupported token" {:tokens tokens :n (dec n)})))))
+      (parse-error "Unsupported token" {:tokens tokens :n (dec n)}))))
 
 (defn- unary [tokens n]
   (if (#{:bang :minus} (:type (current tokens n)))
