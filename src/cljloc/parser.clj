@@ -9,20 +9,23 @@
    unary      : ('!' | '-') unary
               | primary ;
    primary    : NUMBER | STRING | 'true' | 'false' | 'nil'
-              | '(' expression ')' ;"
-  (:require [cljloc.ast :refer [->Binary ->Unary ->Grouping ->Literal] :as ast]
-            [clojure.tools.logging :as log])
-  (:import [clojure.lang ExceptionInfo]))
+              | '(' expression ')' ;
+
+  Main entry point is a `parse` function."
+  (:require [cljloc.ast :refer [->Binary ->Unary ->Grouping ->Literal ->Print ->Expression ->Var ->Variable ->Assign]])
+  (:import [clojure.lang ExceptionInfo]
+           [cljloc.ast Variable]))
 
 (defn- parse-error
   ([message] (parse-error message {}))
   ([message data]
-   (throw (ex-info message (assoc data :type :parse-error)))))
+   (throw (ex-info message (assoc data :type ::parse-error)))))
 
 (defn- consume [tokens n type message]
-  (if (#{type} (:type (get tokens n)))
-    (inc n)
-    (parse-error message {:tokens tokens :n n})))
+  (let [token (get tokens n)]
+    (if (#{type} (:type token))
+      [token (inc n)]
+      (parse-error message {:tokens tokens :n n}))))
 
 (defn- current [tokens n]
   (if-some [token (get tokens n)]
@@ -47,8 +50,9 @@
       (:number | :string) [(->Literal (:literal (previous tokens n))) n]
       :left_paren
       (let [[expr n] (expression tokens n)
-            n (consume tokens n :right_paren "Expect ')' after expression.")]
+            [_ n] (consume tokens n :right_paren "Expect ')' after expression.")]
         [(->Grouping expr) n])
+      :identifier [(->Variable token) n]
       :eof
       [:eof n]
       (parse-error "Unsupported token" {:tokens tokens :n (dec n)}))))
@@ -97,31 +101,78 @@
         (recur [(->Binary expr operator right) n]))
       [expr n])))
 
-(defn- expression [tokens n]
-  (equality tokens n))
+(defn- assignment [tokens n]
+  (let [[expr n] (equality tokens n)]
+    (if (= :equal (:type (get tokens n)))
+      (let [equal-n n
+            [value n] (assignment tokens (inc n))]
+        (if (instance? Variable expr)
+          [(->Assign (:name expr) value) n]
+          (parse-error "Invalid assignment target." {:tokens tokens :n equal-n})))
+      [expr n])))
 
-(defn syncronize [tokens n]
+(defn- expression [tokens n]
+  (assignment tokens n))
+
+(defn- synchronize [tokens n]
   (loop [n (inc n)]
-    (when-not (at-end? tokens n)
-      (cond (not= (:type (previous tokens n)) :semicolon)
-            10
-            (not (#{:class :fun :var :for :if :while :print :return} (:type (current tokens n))))
-            20
+    (if-not (at-end? tokens n)
+      (cond (= (:type (previous tokens n)) :semicolon)
+            n
+            (#{:class :fun :var :for :if :while :print :return} (:type (current tokens n)))
+            n
             :else
-            (recur (inc n))))))
+            (recur (inc n)))
+      n)))
+
+(defn print-statement [tokens n]
+  (let [[expr n] (expression tokens n)]
+    [(->Print expr) (second (consume tokens n :semicolon "Expect ';' after value."))]))
+
+(defn expression-statement [tokens n]
+  (let [[expr n] (expression tokens n)]
+    [(->Expression expr) (second (consume tokens n :semicolon "Expect ';' after value."))]))
+
+(defn statement [tokens n]
+  (let [token (current tokens n)
+        n' (inc n)]
+    (case (:type token)
+      :print (print-statement tokens n')
+      :identifier (expression tokens n))))
+
+(defn var-declaration [tokens n]
+  (let [[name n'] (consume tokens n :identifier "Expect variable name.")
+        [value n'] (if (= :equal (:type (get tokens n')))
+                    (expression tokens (inc n'))
+                    [nil n'])]
+    [(->Var name value) (second (consume tokens n' :semicolon "Expect ';' after value."))]))
+
+(defn declaration [tokens n]
+  (try
+    (let [token (current tokens n)
+          n' (inc n)]
+      (if (= :var (:type token))
+        (var-declaration tokens n')
+        (statement tokens n)))
+    (catch ExceptionInfo e
+      (let [{type :type} (ex-data e)]
+        (if (= type ::parse-error)
+          [nil (synchronize tokens n)]
+          (throw e))))))
 
 (defn parse
-  "Parse a sequence of `Token`s into a sequence of expressions."
+  "Parse a sequence of `Token`s into a sequence of `AST` expressions."
   [tokens]
   (try
     (loop [exprs []
            n 0]
       (if (< n (dec (count tokens)))
-        (let [[expr n] (expression tokens n)]
+        (let [[expr n] (declaration tokens n)]
           (recur (conj exprs expr) n))
         exprs))
     (catch ExceptionInfo e
       (let [{:keys [tokens n]} (ex-data e)
             token (get tokens n)
             [line col] (:pos token)]
-        (log/errorf "[%s:%s] %s at '%s'" line col (ex-message e) (str token))))))
+        (binding [*out* *err*]
+          (println "[%s:%s] %s at '%s'" line col (ex-message e) (str token)))))))

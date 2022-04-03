@@ -8,7 +8,7 @@
   (toString [_]
     (format "[line %d:%d] Error: %s\n%s\n%s" line col message
             source
-            (str (str/join (repeat col " ")) "^"))))
+            (str (str/join (repeat (dec col) " ")) "^"))))
 
 (defn- compose-error
   [source [line col] msg]
@@ -156,11 +156,11 @@
             (if (or (digit? c) (= \. c))
               (recur (inc pos) (inc col))
               [pos col])
-            [pos col]))]
-    (let [num (subs source (dec current) pos)]
-      [pos (inc col) line
-       (conj tokens (make-token :number num (parse-double num) [line col]))
-       errors])))
+            [pos col]))
+        num (subs source (dec current) pos)]
+    [pos (inc col) line
+     (conj tokens (make-token :number num (parse-double num) [line col]))
+     errors]))
 
 (defn- identifier-token [source _ current col line tokens errors]
   (let [[pos col*]
@@ -181,7 +181,7 @@
   "Accepts source code as a string, and returns a hashmap with `errors`
   and `tokens`."
   ([source]
-   (loop [[current col line tokens errors] [0 0 1 [] []]]
+   (loop [[current col line tokens errors] [0 1 1 [] []]]
      (if (at-end? current source)
        {:errors errors
         :tokens (conj tokens (make-token :eof "EOF" [line col]))}

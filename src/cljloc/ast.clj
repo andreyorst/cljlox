@@ -6,6 +6,8 @@
 (defrecord Unary [^Token operator, right])
 (defrecord Grouping [expression])
 (defrecord Literal [value])
+(defrecord Variable [^Token name])
+(defrecord Assign [^Token name, value])
 
 (extend-type Binary
   IStringable
@@ -35,8 +37,11 @@
       (tostring value)
       "nil")))
 
-(defn tostring-expr [expr]
-  (tostring expr))
+(extend-type Variable
+  IStringable
+  (tostring [self]
+    (:name self)))
 
-(defn print-ast [expr]
-  (println (tostring-expr expr)))
+(defrecord Expression [expression])
+(defrecord Print [expression])
+(defrecord Var [^Token name initializer])
