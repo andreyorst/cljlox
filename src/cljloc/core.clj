@@ -3,7 +3,7 @@
             [cljloc.parser :refer [parse]]
             [cljloc.evaluator :refer [interpret]]))
 
-(defn run
+(defn- run
   ([source]
    (run source nil))
   ([source file]
@@ -16,10 +16,10 @@
        (doseq [ast (parse tokens)]
          (interpret ast))))))
 
-(defn run-file [file]
+(defn- run-file [file]
   (run (slurp file) file))
 
-(defn run-prompt []
+(defn- run-prompt []
   (println "Welcome to CljLoc.")
   (loop []
     (print "cljloc> ")

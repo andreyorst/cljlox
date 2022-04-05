@@ -1,8 +1,8 @@
 (ns cljloc.parser
   "A recursive descent parser.
   Main entry point is a `parse` function."
-  (:require [cljloc.ast :refer [->Binary ->Unary ->Grouping ->Literal ->Print ->Expression ->Var ->Variable ->Assign ->Block ->If ->Logical]])
-  (:import [clojure.lang ExceptionInfo]
+  (:import [cljloc.ast Binary Unary Grouping Literal Print Expression Var Variable Assign Block If Logical]
+           [clojure.lang ExceptionInfo]
            [cljloc.ast Variable]))
 
 (defn- parse-error
@@ -21,7 +21,7 @@
     token
     (parse-error "Unfinished expression" {:tokens tokens :n (dec n)})))
 
-(defn at-end? [tokens n]
+(defn- at-end? [tokens n]
   (= :eof (-> tokens (get n) :type)))
 
 (defn- previous [tokens n]
@@ -33,15 +33,15 @@
   (let [token (current tokens n)
         n (inc n)]
     (case (:type token)
-      :true [(->Literal true) n]
-      :false [(->Literal false) n]
-      :nil [(->Literal nil) n]
-      (:number | :string) [(->Literal (:literal (previous tokens n))) n]
+      :true [(Literal. true) n]
+      :false [(Literal. false) n]
+      :nil [(Literal. nil) n]
+      (:number | :string) [(Literal. (:literal (previous tokens n))) n]
       :left_paren
       (let [[expr n] (expression tokens n)
             [_ n] (consume tokens n :right_paren "Expect ')' after expression.")]
-        [(->Grouping expr) n])
-      :identifier [(->Variable token) n]
+        [(Grouping. expr) n])
+      :identifier [(Variable. token) n]
       :eof
       [:eof n]
       (parse-error "Unsupported token" {:tokens tokens :n (dec n)}))))
@@ -51,7 +51,7 @@
     (let [n (inc n)
           operator (previous tokens n)
           [right n] (unary tokens n)]
-      [(->Unary operator right) n])
+      [(Unary. operator right) n])
     (primary tokens n)))
 
 (defn- factor [tokens n]
@@ -60,7 +60,7 @@
       (let [n (inc n)
             operator (previous tokens n)
             [right n] (unary tokens n)]
-        (recur [(->Binary expr operator right) n]))
+        (recur [(Binary. expr operator right) n]))
       [expr n])))
 
 (defn- term [tokens n]
@@ -69,7 +69,7 @@
       (let [n (inc n)
             operator (previous tokens n)
             [right n] (factor tokens n)]
-        (recur [(->Binary expr operator right) n]))
+        (recur [(Binary. expr operator right) n]))
       [expr n])))
 
 (defn- comparison [tokens n]
@@ -78,7 +78,7 @@
       (let [n (inc n)
             operator (previous tokens n)
             [right n] (term tokens n)]
-        (recur [(->Binary expr operator right) n]))
+        (recur [(Binary. expr operator right) n]))
       [expr n])))
 
 (defn- equality [tokens n]
@@ -87,7 +87,7 @@
       (let [n (inc n)
             operator (previous tokens n)
             [right n] (comparison tokens n)]
-        (recur [(->Binary expr operator right) n]))
+        (recur [(Binary. expr operator right) n]))
       [expr n])))
 
 (defn- and-expr [tokens n]
@@ -97,7 +97,7 @@
                (= :and (:type token)))
         (let [operator token
               [right n] (equality tokens (inc n))]
-          (recur [(->Logical expr operator right) n]))
+          (recur [(Logical. expr operator right) n]))
         [expr n]))))
 
 (defn- or-expr [tokens n]
@@ -107,7 +107,7 @@
                (= :or (:type token)))
         (let [operator token
               [right n] (and-expr tokens (inc n))]
-          (recur [(->Logical expr operator right) n]))
+          (recur [(Logical. expr operator right) n]))
         [expr n]))))
 
 (defn- assignment [tokens n]
@@ -116,7 +116,7 @@
       (let [equal-n n
             [value n] (assignment tokens (inc n))]
         (if (instance? Variable expr)
-          [(->Assign (:name expr) value) n]
+          [(Assign. (:name expr) value) n]
           (parse-error "Invalid assignment target." {:tokens tokens :n equal-n})))
       [expr n])))
 
@@ -134,40 +134,40 @@
             (recur (inc n)))
       n)))
 
-(defn print-statement [tokens n]
+(defn- print-statement [tokens n]
   (let [[expr n] (expression tokens n)]
-    [(->Print expr) (second (consume tokens n :semicolon "Expect ';' after value."))]))
+    [(Print. expr) (second (consume tokens n :semicolon "Expect ';' after value."))]))
 
 #_
-(defn expression-statement [tokens n]
+(defn- expression-statement [tokens n]
   (let [[expr n] (expression tokens n)]
-    [(->Expression expr) (second (consume tokens n :semicolon "Expect ';' after value."))]))
+    [(Expression. expr) (second (consume tokens n :semicolon "Expect ';' after value."))]))
 
 (declare declaration)
 (declare statement)
 
-(defn block [tokens n]
+(defn- block [tokens n]
   (loop [statements []
          n n]
     (let [token (get tokens n)]
       (case (:type token)
         (:eof | :right_brace)
-        [(->Block statements)
+        [(Block. statements)
          (second (consume tokens n :right_brace "Expect '}' after block."))]
         (let [[statement n] (declaration tokens n)]
           (recur (conj statements statement) n))))))
 
-(defn if-statement [tokens n]
+(defn- if-statement [tokens n]
   (let [[_ n] (consume tokens n :left_paren "Expect '(' after 'if'.")
         [condition n] (expression tokens n)
         [_ n] (consume tokens n :right_paren "Expect ')' after if condition.")
         [then n] (statement tokens n)]
     (if (= :else (:type (current tokens n)))
       (let [[else n] (statement tokens (inc n))]
-        [(->If condition then else) n])
-      [(->If condition then nil) n])))
+        [(If. condition then else) n])
+      [(If. condition then nil) n])))
 
-(defn statement [tokens n]
+(defn- statement [tokens n]
   (let [token (current tokens n)
         n' (inc n)]
     (case (:type token)
@@ -177,14 +177,14 @@
       :left_brace (block tokens n')
       (expression tokens n))))
 
-(defn var-declaration [tokens n]
+(defn- var-declaration [tokens n]
   (let [[name n'] (consume tokens n :identifier "Expect variable name.")
         [value n'] (if (= :equal (:type (get tokens n')))
                      (expression tokens (inc n'))
                      [nil n'])]
-    [(->Var name value) (second (consume tokens n' :semicolon "Expect ';' after value."))]))
+    [(Var. name value) (second (consume tokens n' :semicolon "Expect ';' after value."))]))
 
-(defn declaration [tokens n]
+(defn- declaration [tokens n]
   (try
     (let [token (current tokens n)
           n' (inc n)]

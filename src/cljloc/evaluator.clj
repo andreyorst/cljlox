@@ -1,11 +1,10 @@
 (ns cljloc.evaluator
   "Evaluate AST."
-  (:require [clojure.tools.logging :as log]
-            [clojure.string :as str])
+  (:require [clojure.string :as str])
   (:import [cljloc.ast Binary Unary Grouping Print Var Variable Assign Literal Block If Logical]
            [clojure.lang ExceptionInfo]))
 
-(defn make-env
+(defn- make-env
   ([] (make-env nil))
   ([parent]
    (atom {:enclosing parent
@@ -95,20 +94,19 @@
     (println (tostring (evaluate expression env)))
     nil))
 
-(defn set-variable [env var value]
-  (assoc-in env [:values var] value))
-
 (extend-type Var
   IInterpretable
   (evaluate [{:keys [name initializer]} env]
     (swap! env
-           set-variable
-           (:lexeme name)
+           assoc-in
+           [:values (:lexeme name)]
            (when (some? initializer)
              (evaluate initializer env)))
     nil))
 
-(defn get-variable [env var]
+(defn- get-variable
+  "Recursively walks environments upwards looking for a variable."
+  [env var]
   (let [env @env
         values (:values env)
         name (:lexeme var)]
