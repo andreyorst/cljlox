@@ -45,3 +45,4 @@
 (defrecord Expression [expression])
 (defrecord Print [expression])
 (defrecord Var [^Token name initializer])
+(defrecord Block [statements])

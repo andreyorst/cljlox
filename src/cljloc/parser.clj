@@ -1,18 +1,7 @@
 (ns cljloc.parser
-  "A recursive descent parser that implements the following grammar:
-
-   expression : equality ;
-   equality   : comparison (('!=' | '==') comparison)* ;
-   comparison : term (('>' | '>=' | '<' | '<=') term)* ;
-   term       : factor (('-' | '+') factor)* ;
-   factor     : unary (('/' | '*') unary)* ;
-   unary      : ('!' | '-') unary
-              | primary ;
-   primary    : NUMBER | STRING | 'true' | 'false' | 'nil'
-              | '(' expression ')' ;
-
+  "A recursive descent parser.
   Main entry point is a `parse` function."
-  (:require [cljloc.ast :refer [->Binary ->Unary ->Grouping ->Literal ->Print ->Expression ->Var ->Variable ->Assign]])
+  (:require [cljloc.ast :refer [->Binary ->Unary ->Grouping ->Literal ->Print ->Expression ->Var ->Variable ->Assign ->Block]])
   (:import [clojure.lang ExceptionInfo]
            [cljloc.ast Variable]))
 
@@ -129,22 +118,38 @@
   (let [[expr n] (expression tokens n)]
     [(->Print expr) (second (consume tokens n :semicolon "Expect ';' after value."))]))
 
+#_
 (defn expression-statement [tokens n]
   (let [[expr n] (expression tokens n)]
     [(->Expression expr) (second (consume tokens n :semicolon "Expect ';' after value."))]))
+
+(declare declaration)
+
+(defn block [tokens n]
+  (loop [statements []
+         n n]
+    (let [token (get tokens n)]
+      (case (:type token)
+        (:eof | :right_brace)
+        [(->Block statements)
+         (second (consume tokens n :right_brace "Expect '}' after block."))]
+        (let [[statement n] (declaration tokens n)]
+          (recur (conj statements statement) n))))))
 
 (defn statement [tokens n]
   (let [token (current tokens n)
         n' (inc n)]
     (case (:type token)
       :print (print-statement tokens n')
-      :identifier (expression tokens n))))
+      :identifier (expression tokens n)
+      :left_brace (block tokens n')
+      (expression tokens n))))
 
 (defn var-declaration [tokens n]
   (let [[name n'] (consume tokens n :identifier "Expect variable name.")
         [value n'] (if (= :equal (:type (get tokens n')))
-                    (expression tokens (inc n'))
-                    [nil n'])]
+                     (expression tokens (inc n'))
+                     [nil n'])]
     [(->Var name value) (second (consume tokens n' :semicolon "Expect ';' after value."))]))
 
 (defn declaration [tokens n]
@@ -168,7 +173,7 @@
            n 0]
       (if (< n (dec (count tokens)))
         (let [[expr n] (declaration tokens n)]
-          (recur (conj exprs expr) n))
+          (recur (if expr (conj exprs expr) exprs) n))
         exprs))
     (catch ExceptionInfo e
       (let [{:keys [tokens n]} (ex-data e)
