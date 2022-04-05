@@ -1,7 +1,7 @@
 (ns cljloc.parser
   "A recursive descent parser.
   Main entry point is a `parse` function."
-  (:require [cljloc.ast :refer [->Binary ->Unary ->Grouping ->Literal ->Print ->Expression ->Var ->Variable ->Assign ->Block]])
+  (:require [cljloc.ast :refer [->Binary ->Unary ->Grouping ->Literal ->Print ->Expression ->Var ->Variable ->Assign ->Block ->If ->Logical]])
   (:import [clojure.lang ExceptionInfo]
            [cljloc.ast Variable]))
 
@@ -90,8 +90,28 @@
         (recur [(->Binary expr operator right) n]))
       [expr n])))
 
+(defn- and-expr [tokens n]
+  (loop [[expr n] (equality tokens n)]
+    (let [token (current tokens n)]
+      (if (and (not= (:type token) :eof)
+               (= :and (:type token)))
+        (let [operator token
+              [right n] (equality tokens (inc n))]
+          (recur [(->Logical expr operator right) n]))
+        [expr n]))))
+
+(defn- or-expr [tokens n]
+  (loop [[expr n] (and-expr tokens n)]
+    (let [token (current tokens n)]
+      (if (and (not= (:type token) :eof)
+               (= :or (:type token)))
+        (let [operator token
+              [right n] (and-expr tokens (inc n))]
+          (recur [(->Logical expr operator right) n]))
+        [expr n]))))
+
 (defn- assignment [tokens n]
-  (let [[expr n] (equality tokens n)]
+  (let [[expr n] (or-expr tokens n)]
     (if (= :equal (:type (get tokens n)))
       (let [equal-n n
             [value n] (assignment tokens (inc n))]
@@ -124,6 +144,7 @@
     [(->Expression expr) (second (consume tokens n :semicolon "Expect ';' after value."))]))
 
 (declare declaration)
+(declare statement)
 
 (defn block [tokens n]
   (loop [statements []
@@ -136,10 +157,21 @@
         (let [[statement n] (declaration tokens n)]
           (recur (conj statements statement) n))))))
 
+(defn if-statement [tokens n]
+  (let [[_ n] (consume tokens n :left_paren "Expect '(' after 'if'.")
+        [condition n] (expression tokens n)
+        [_ n] (consume tokens n :right_paren "Expect ')' after if condition.")
+        [then n] (statement tokens n)]
+    (if (= :else (:type (current tokens n)))
+      (let [[else n] (statement tokens (inc n))]
+        [(->If condition then else) n])
+      [(->If condition then nil) n])))
+
 (defn statement [tokens n]
   (let [token (current tokens n)
         n' (inc n)]
     (case (:type token)
+      :if (if-statement tokens n')
       :print (print-statement tokens n')
       :identifier (expression tokens n)
       :left_brace (block tokens n')

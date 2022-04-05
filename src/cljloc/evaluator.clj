@@ -2,7 +2,7 @@
   "Evaluate AST."
   (:require [clojure.tools.logging :as log]
             [clojure.string :as str])
-  (:import [cljloc.ast Binary Unary Grouping Print Var Variable Assign Literal Block]
+  (:import [cljloc.ast Binary Unary Grouping Print Var Variable Assign Literal Block If Logical]
            [clojure.lang ExceptionInfo]))
 
 (defn make-env
@@ -138,6 +138,27 @@
     (let [env' (make-env env)]
       (doseq [statement statements]
         (evaluate statement env')))))
+
+(extend-type If
+  IInterpretable
+  (evaluate [{:keys [condition then else]} env]
+    (let [test (evaluate condition env)]
+      (if (truth? test)
+        (evaluate then env)
+        (when else
+          (evaluate else env))))))
+
+(extend-type Logical
+  IInterpretable
+  (evaluate [{:keys [left operator right]} env]
+    (let [left (evaluate left env)]
+          (case (:type operator)
+            :or (if (truth? left)
+                  left
+                  (evaluate right env))
+            :and (if (not (truth? left))
+                   left
+                   (evaluate right env))))))
 
 (defn interpret
   ([ast] (interpret ast "stdin"))

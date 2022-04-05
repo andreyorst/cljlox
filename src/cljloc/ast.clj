@@ -6,8 +6,14 @@
 (defrecord Unary [^Token operator, right])
 (defrecord Grouping [expression])
 (defrecord Literal [value])
+(defrecord Logical [left, ^Token operator, right])
 (defrecord Variable [^Token name])
 (defrecord Assign [^Token name, value])
+(defrecord Expression [expression])
+(defrecord Print [expression])
+(defrecord Var [^Token name initializer])
+(defrecord Block [statements])
+(defrecord If [condition, then, else])
 
 (extend-type Binary
   IStringable
@@ -41,8 +47,3 @@
   IStringable
   (tostring [self]
     (:name self)))
-
-(defrecord Expression [expression])
-(defrecord Print [expression])
-(defrecord Var [^Token name initializer])
-(defrecord Block [statements])
