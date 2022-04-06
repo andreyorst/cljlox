@@ -196,7 +196,7 @@
   ([ast] (interpret ast "stdin"))
   ([ast file]
    (try
-     (-> ast (evaluate *global-env) tostring println)
+     (-> ast (evaluate *global-env) tostring)
      (catch ExceptionInfo e
        (let [data (ex-data e)]
          (if (= ::runtime-error (:type data))

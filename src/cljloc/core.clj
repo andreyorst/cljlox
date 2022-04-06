@@ -1,7 +1,8 @@
 (ns cljloc.core
   (:require [cljloc.tokenizer :refer [tokenize]]
             [cljloc.parser :refer [parse]]
-            [cljloc.evaluator :refer [interpret]]))
+            [cljloc.evaluator :refer [interpret]])
+  (:gen-class))
 
 (defn- run
   ([source]
@@ -13,11 +14,14 @@
          (doseq [error errors]
            (binding [*out* *err*]
              (println (format fmt (str error))))))
-       (doseq [ast (parse tokens)]
-         (interpret ast))))))
+       (loop [ast (parse tokens)
+              res nil]
+         (if-let [[expr & ast] (seq ast)]
+           (recur ast (interpret expr))
+           res))))))
 
 (defn- run-file [file]
-  (run (slurp file) file))
+  (println (run (slurp file) file)))
 
 (defn- run-prompt []
   (println "Welcome to CljLoc.")
@@ -25,7 +29,7 @@
     (print "cljloc> ")
     (flush)
     (when-some [line (read-line)]
-      (run line)
+      (println (run line))
       (recur))))
 
 (defn -main [& args]
