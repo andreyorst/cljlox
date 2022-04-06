@@ -1,9 +1,9 @@
 (ns cljloc.parser
   "A recursive descent parser.
   Main entry point is a `parse` function."
-  (:import [cljloc.ast Binary Unary Grouping Literal Print Expression Var Variable Assign Block If Logical While]
-           [clojure.lang ExceptionInfo]
-           [cljloc.ast Variable]))
+  (:require [cljloc.ast :as ast])
+  (:import [cljloc.ast Binary Unary Grouping Literal Print Expression Var Variable Assign Block If Logical While Break]
+           [clojure.lang ExceptionInfo]))
 
 (defn- parse-error
   ([message] (parse-error message {}))
@@ -128,7 +128,7 @@
     (if-not (at-end? tokens n)
       (cond (= (:type (previous tokens n)) :semicolon)
             n
-            (#{:class :fun :var :for :if :while :print :return} (:type (current tokens n)))
+            (#{:class :fun :var :for :if :while :print :return :break} (:type (current tokens n)))
             n
             :else
             (recur (inc n)))
@@ -138,13 +138,13 @@
   (let [[expr n] (expression tokens n)]
     [(Print. expr) (second (consume tokens n :semicolon "Expect ';' after value."))]))
 
-#_
 (defn- expression-statement [tokens n]
   (let [[expr n] (expression tokens n)]
     [(Expression. expr) (second (consume tokens n :semicolon "Expect ';' after value."))]))
 
 (declare declaration)
 (declare statement)
+(declare var-declaration)
 
 (defn- block [tokens n]
   (loop [statements []
@@ -176,15 +176,43 @@
         [body n] (statement tokens n)]
     [(While. condition body) n]))
 
+(defn- for-statement [tokens n]
+  (let [[_ n] (consume tokens n :left_paren "Expect '(' after 'for'.")
+        [initializer n] (case (:type (current tokens n))
+                          :semicolon [nil (inc n)]
+                          :var (var-declaration tokens (inc n))
+                          (expression-statement tokens (inc n)))
+        [condition n] (if (not= :semicolon (:type (current tokens n)))
+                        (expression tokens n)
+                        [(Literal. true) n])
+        [_ n] (consume tokens n :semicolon "Expect ';' after loop condition.")
+        [increment n] (if (not= :right_paren (:type (current tokens n)))
+                        (statement tokens n)
+                        [nil n])
+        [_ n] (consume tokens n :right_paren "Expect ')' after for clauses.")
+        [body n] (statement tokens n)
+        body (While. condition
+                     (if increment
+                       (Block. [body increment])
+                       body))]
+    (if initializer
+      [(Block. [initializer body]) n]
+      [body n])))
+
+(defn- break-statement [tokens n]
+  [(Break. (current tokens n)) (second (consume tokens n :semicolon "Expect ';' after loop condition."))])
+
 (defn- statement [tokens n]
   (let [token (current tokens n)
         n' (inc n)]
     (case (:type token)
       :if (if-statement tokens n')
+      :for (for-statement tokens n')
       :while (while-statement tokens n')
       :print (print-statement tokens n')
       :identifier (expression tokens n)
       :left_brace (block tokens n')
+      :break (break-statement tokens n')
       (expression tokens n))))
 
 (defn- var-declaration [tokens n]

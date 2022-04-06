@@ -1,6 +1,8 @@
 (ns cljloc.ast
-  (:require [cljloc.protocols :refer [IStringable tostring]])
-  (:import [cljloc.tokenizer Token]))
+  (:require [cljloc.protocols :refer [IStringable tostring]]
+            [cljloc.tokenizer])
+  (:import [cljloc.tokenizer Token])
+  (:gen-class))
 
 (defrecord Binary [left, ^Token operator, right])
 (defrecord Unary [^Token operator, right])
@@ -15,6 +17,8 @@
 (defrecord Block [statements])
 (defrecord If [condition, then, else])
 (defrecord While [condition, body])
+(defrecord For [initializer, body])
+(defrecord Break [^Token break])
 
 (extend-type Binary
   IStringable

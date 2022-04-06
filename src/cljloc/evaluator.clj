@@ -1,7 +1,8 @@
 (ns cljloc.evaluator
   "Evaluate AST."
-  (:require [clojure.string :as str])
-  (:import [cljloc.ast Binary Unary Grouping Print Var Variable Assign Literal Block If Logical While]
+  (:require [clojure.string :as str]
+            [cljloc.ast :as ast])
+  (:import [cljloc.ast Binary Unary Grouping Print Var Variable Assign Literal Block If Logical While Break]
            [clojure.lang ExceptionInfo]))
 
 (defn- make-env
@@ -137,12 +138,30 @@
       (assign env name val)
       val)))
 
+(defn- in-loop-ctx? [env]
+  (let [env' @env]
+    (if (:loop env')
+      (do (swap! env assoc :loop :break)
+          true)
+      (if-some [enclosing (:enclosing env')]
+        (recur enclosing)
+        false))))
+
+(extend-type Break
+  IInterpretable
+  (evaluate [{:keys [break]} _]
+    (runtime-error "Break outside of the loop" {:token break})))
+
 (extend-type Block
   IInterpretable
   (evaluate [{:keys [statements]} env]
     (let [env' (make-env env)]
-      (doseq [statement statements]
-        (evaluate statement env')))))
+      (loop [statements statements]
+        (when-let [[statement & statements] (seq statements)]
+          (when-not (and (instance? Break statement)
+                         (in-loop-ctx? env))
+            (evaluate statement env')
+            (recur statements)))))))
 
 (extend-type If
   IInterpretable
@@ -168,8 +187,10 @@
 (extend-type While
   IInterpretable
   (evaluate [{:keys [condition body]} env]
-    (while (truth? (evaluate condition env))
-      (evaluate body env))))
+    (do (swap! env assoc :loop true)
+        (while (and (truth? (evaluate condition env))
+                    (not (= :break (:loop @env))))
+          (evaluate body env)))))
 
 (defn interpret
   ([ast] (interpret ast "stdin"))

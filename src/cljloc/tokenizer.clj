@@ -78,7 +78,8 @@
    "this"   :this
    "true"   :true
    "var"    :var
-   "while"  :while})
+   "while"  :while
+   "break"  :break})
 
 (defn- digit? [c]
   (boolean (re-find #"[0-9]" (str c))))
