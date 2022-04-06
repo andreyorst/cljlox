@@ -1,7 +1,7 @@
 (ns cljloc.parser
   "A recursive descent parser.
   Main entry point is a `parse` function."
-  (:import [cljloc.ast Binary Unary Grouping Literal Print Expression Var Variable Assign Block If Logical]
+  (:import [cljloc.ast Binary Unary Grouping Literal Print Expression Var Variable Assign Block If Logical While]
            [clojure.lang ExceptionInfo]
            [cljloc.ast Variable]))
 
@@ -155,7 +155,9 @@
         [(Block. statements)
          (second (consume tokens n :right_brace "Expect '}' after block."))]
         (let [[statement n] (declaration tokens n)]
-          (recur (conj statements statement) n))))))
+          (if statement
+            (recur (conj statements statement) n)
+            (recur statements n)))))))
 
 (defn- if-statement [tokens n]
   (let [[_ n] (consume tokens n :left_paren "Expect '(' after 'if'.")
@@ -167,11 +169,19 @@
         [(If. condition then else) n])
       [(If. condition then nil) n])))
 
+(defn- while-statement [tokens n]
+  (let [[_ n] (consume tokens n :left_paren "Expect '(' after 'while'.")
+        [condition n] (expression tokens n)
+        [_ n] (consume tokens n :right_paren "Expect ')' after while condition.")
+        [body n] (statement tokens n)]
+    [(While. condition body) n]))
+
 (defn- statement [tokens n]
   (let [token (current tokens n)
         n' (inc n)]
     (case (:type token)
       :if (if-statement tokens n')
+      :while (while-statement tokens n')
       :print (print-statement tokens n')
       :identifier (expression tokens n)
       :left_brace (block tokens n')

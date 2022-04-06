@@ -14,6 +14,7 @@
 (defrecord Var [^Token name initializer])
 (defrecord Block [statements])
 (defrecord If [condition, then, else])
+(defrecord While [condition, body])
 
 (extend-type Binary
   IStringable

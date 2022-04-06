@@ -57,7 +57,7 @@
   "Double character tokens types."
   {"==" :equal_equal
    "!=" :bang_equal
-   "<=" :less_eqal
+   "<=" :less_equal
    ">=" :greater_equal
    "//" :comment})
 

@@ -1,7 +1,7 @@
 (ns cljloc.evaluator
   "Evaluate AST."
   (:require [clojure.string :as str])
-  (:import [cljloc.ast Binary Unary Grouping Print Var Variable Assign Literal Block If Logical]
+  (:import [cljloc.ast Binary Unary Grouping Print Var Variable Assign Literal Block If Logical While]
            [clojure.lang ExceptionInfo]))
 
 (defn- make-env
@@ -121,14 +121,21 @@
   (evaluate [{:keys [name]} env]
     (get-variable env name)))
 
+(defn- assign [env name val]
+  (let [env' @env
+        var (:lexeme name)]
+    (if (contains? (:values env') var)
+      (swap! env assoc-in [:values var] val)
+      (if-some [enclosing (:enclosing env')]
+        (recur enclosing name val)
+        (runtime-error (format "Undefined variable '%s'." var) {:token name})))))
+
 (extend-type Assign
   IInterpretable
   (evaluate [{:keys [name value]} env]
     (let [val (evaluate value env)]
-      (if (contains? @env (:lexeme name))
-        (swap! env assoc (:lexeme name) val)
-        (runtime-error (format "Undefined variable '%s'." (:lexeme name)) {:token name})))
-    val))
+      (assign env name val)
+      val)))
 
 (extend-type Block
   IInterpretable
@@ -150,13 +157,19 @@
   IInterpretable
   (evaluate [{:keys [left operator right]} env]
     (let [left (evaluate left env)]
-          (case (:type operator)
-            :or (if (truth? left)
-                  left
-                  (evaluate right env))
-            :and (if (not (truth? left))
-                   left
-                   (evaluate right env))))))
+      (case (:type operator)
+        :or (if (truth? left)
+              left
+              (evaluate right env))
+        :and (if (not (truth? left))
+               left
+               (evaluate right env))))))
+
+(extend-type While
+  IInterpretable
+  (evaluate [{:keys [condition body]} env]
+    (while (truth? (evaluate condition env))
+      (evaluate body env))))
 
 (defn interpret
   ([ast] (interpret ast "stdin"))
