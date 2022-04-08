@@ -1,8 +1,8 @@
 (ns cljloc.evaluator
   "Evaluate AST."
-  (:require [clojure.string :as str]
-            [cljloc.ast :as ast])
-  (:import [cljloc.ast Binary Unary Grouping Print Var Variable Assign Literal Block If Logical While Break]
+  (:require [cljloc.ast :as ast]
+            [cljloc.protocols :refer [ICallable call IStringable tostring]])
+  (:import [cljloc.ast Binary Unary Grouping Print Var Variable Assign Literal Block If Logical While Break Call LoxCallable Function Return]
            [clojure.lang ExceptionInfo]))
 
 (defn- make-env
@@ -11,7 +11,11 @@
    (atom {:enclosing parent
           :values {}})))
 
-(defonce *global-env (make-env))
+(def builtins
+  {:values {"clock" (LoxCallable. 0 (fn [] (/ (System/currentTimeMillis) 1000.0)))}
+   :enclosing nil})
+
+(def *global-env (make-env builtins))
 
 (defn- runtime-error
   ([msg]
@@ -19,6 +23,21 @@
   ([msg data]
    {:pre [(map? data)]}
    (throw (ex-info msg (assoc data :type ::runtime-error)))))
+
+(extend-type LoxCallable
+  ICallable
+  (call [{:keys [arity function]} arguments token env]
+    (if (= arity (count arguments))
+      (apply function arguments)
+      (runtime-error
+       (format "Expected %s arguments but got %s." arity (count arguments))
+       {:token token}))))
+
+(extend-protocol ICallable
+  Object
+  (call [self & rest] (runtime-error "Can only call functions and classes."))
+  nil
+  (call [self & rest] (runtime-error "Can only call functions and classes.")))
 
 (defn- truth? [val]
   (if (some? val)
@@ -34,13 +53,12 @@
    (when-not (and (double? val1) (double? val2))
      (runtime-error "Operands must be numbers" {:token op}))))
 
-(defn- tostring [obj]
-  (cond (double? obj) (-> obj str (str/replace #"\.0$" ""))
-        (nil? obj) "nil"
-        :else (str obj)))
-
 (defprotocol IInterpretable
   (evaluate [self env]))
+
+#_(extend-type Object
+    IInterpretable
+    (evaluate [self _] self))
 
 (extend-type Literal
   IInterpretable
@@ -135,22 +153,28 @@
   IInterpretable
   (evaluate [{:keys [name value]} env]
     (let [val (evaluate value env)]
-      (assign env name val)
+      (try
+        (assign env name val)
+        (catch ExceptionInfo e
+          (throw e))
+        (catch Exception _
+          (runtime-error (format "Can't assign %s." (:lexeme name)) {:token name})))
       val)))
 
 (defn- in-loop-ctx? [env]
   (let [env' @env]
     (if (:loop env')
-      (do (swap! env assoc :loop :break)
-          true)
+      true
       (if-some [enclosing (:enclosing env')]
         (recur enclosing)
         false))))
 
 (extend-type Break
   IInterpretable
-  (evaluate [{:keys [break]} _]
-    (runtime-error "Break outside of the loop" {:token break})))
+  (evaluate [{:keys [break]} env]
+    (if (in-loop-ctx? env)
+      (throw (ex-info "break" {:type :break}))
+      (runtime-error "Break outside of the loop" {:token break}))))
 
 (extend-type Block
   IInterpretable
@@ -158,10 +182,8 @@
     (let [env' (make-env env)]
       (loop [statements statements]
         (when-let [[statement & statements] (seq statements)]
-          (when-not (and (instance? Break statement)
-                         (in-loop-ctx? env))
-            (evaluate statement env')
-            (recur statements)))))))
+          (evaluate statement env')
+          (recur statements))))))
 
 (extend-type If
   IInterpretable
@@ -187,10 +209,52 @@
 (extend-type While
   IInterpretable
   (evaluate [{:keys [condition body]} env]
-    (do (swap! env assoc :loop true)
-        (while (and (truth? (evaluate condition env))
-                    (not (= :break (:loop @env))))
-          (evaluate body env)))))
+    (try
+      (swap! env assoc :loop true)
+      (while (truth? (evaluate condition env))
+        (evaluate body env))
+      (catch ExceptionInfo e
+        (if (= :break (:type (ex-data e)))
+          nil
+          (throw e))))))
+
+(extend-type Call
+  IInterpretable
+  (evaluate [{:keys [callee arguments]} env]
+    (let [function (evaluate callee env)
+          args (map #(evaluate % env) arguments)]
+      (call function args (:name callee) env))))
+
+(extend-type Return
+  IInterpretable
+  (evaluate [{:keys [value]} env]
+    (throw (ex-info "return" {:type :return,
+                              :value (when value (evaluate value env))}))))
+
+(defrecord LoxFunction [^Function declaration, closure]
+  ICallable
+  (call [{{:keys [params body]} :declaration} args _ _]
+    (try
+      (let [env (make-env closure)]
+        (doseq [[arg val] (map vector params args)]
+          (swap! env assoc-in [:values (:lexeme (:name arg))] val))
+        (evaluate body env))
+      (catch ExceptionInfo e
+        (let [data (ex-data e)]
+          (if (= :return (:type data))
+            (:value data)
+            (throw e))))))
+  IStringable
+  (tostring [self]
+    (format "#<function: %s>" (->> self :declaration :name :lexeme))))
+
+(extend-type Function
+  IInterpretable
+  (evaluate [{:keys [name] :as self} env]
+    (let [f (LoxFunction. self env)]
+      (when name
+        (swap! env assoc-in [:values (:lexeme name)] f))
+      f)))
 
 (defn interpret
   ([ast] (interpret ast "stdin"))

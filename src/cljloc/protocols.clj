@@ -1,10 +1,17 @@
-(ns cljloc.protocols)
+(ns cljloc.protocols
+  (:require [clojure.string :as str]))
 
 (defprotocol IStringable
   (tostring [self]))
 
 (extend-protocol IStringable
   Object
-  (tostring [self] (str self))
+  (tostring [self]
+    (cond (double? self) (-> self str (str/replace #"\.0$" ""))
+          (nil? self) "nil"
+          :else (str self)))
   nil
-  (tostring [self] "nil"))
+  (tostring [_] "nil"))
+
+(defprotocol ICallable
+  (call [self arguments token env]))
