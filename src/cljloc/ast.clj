@@ -5,55 +5,32 @@
   (:import [cljloc.tokenizer Token])
   (:gen-class))
 
-(defrecord Binary [left, ^Token operator, right])
-(defrecord Call [callee, ^Token paren, arguments])
-(defrecord Unary [^Token operator, right])
-(defrecord Grouping [expression])
-(defrecord Literal [value])
-(defrecord Logical [left, ^Token operator, right])
-(defrecord Variable [^Token name])
-(defrecord Assign [^Token name, value])
-(defrecord Expression [expression])
-(defrecord Print [expression])
-(defrecord Var [^Token name initializer])
-(defrecord Block [statements])
-(defrecord If [condition, then, else])
-(defrecord While [condition, body])
-(defrecord For [initializer, body])
-(defrecord Break [^Token break])
-
-(extend-type Binary
+(defrecord Binary [left, ^Token operator, right]
   IStringable
-  (tostring [self]
-    (format "(%s %s %s)"
-            (tostring (:operator self))
-            (tostring (:left self))
-            (tostring (:right self)))))
+  (tostring [{:keys [operator left right]}]
+    (format "(%s %s %s)" (tostring operator) (tostring left) (tostring right))))
 
-(extend-type Call
+(defrecord Call [callee, ^Token paren, arguments]
   IStringable
-  (tostring [{:keys [callee arguments]}]
+  (tostring [_]
     (if (seq arguments)
       (format "(%s %s)" (tostring callee) (str/join " " (map tostring arguments)))
       (format "(%s)" (tostring callee)))))
 
-(extend-type Unary
+(defrecord Unary [^Token operator, right]
   IStringable
-  (tostring [self]
-    (format "(%s %s)"
-            (tostring (:operator self))
-            (tostring (:right self)))))
+  (tostring [_]
+    (format "(%s %s)" (tostring operator) (tostring right))))
 
-(extend-type Grouping
+(defrecord Grouping [expression]
   IStringable
-  (tostring [self]
-    (format "(do %s)"
-            (tostring (:expression self)))))
+  (tostring [_]
+    (format "(do %s)" (tostring expression))))
 
-(extend-type Literal
+(defrecord Literal [value]
   IStringable
-  (tostring [self]
-    (if-some [value (:value self)]
+  (tostring [_]
+    (if (some? value)
       (let [res (tostring value)]
         (if (and (number? value)
                  (re-find #"\.0$" res))
@@ -61,64 +38,81 @@
           res))
       "nil")))
 
-(extend-type Logical
+(defrecord Logical [left, ^Token operator, right]
   IStringable
-  (tostring [self]
-    (format "(%s %s %s)"
-            (tostring (:operator self))
-            (tostring (:left self))
-            (tostring (:right self)))))
+  (tostring [_]
+    (format "(%s %s %s)" (tostring operator) (tostring left) (tostring right))))
 
-(extend-type Variable
+(defrecord Variable [^Token name]
   IStringable
-  (tostring [self]
-    (:name self)))
+  (tostring [_]
+    (:lexeme name)))
 
-(extend-type Assign
+(defrecord Assign [^Token name, value]
   IStringable
-  (tostring [self]
+  (tostring [_]
     (format "(set %s %s)"
-            (tostring (:lexeme (:name self)))
-            (tostring (:value self)))))
+            (tostring (:lexeme name))
+            (tostring value))))
 
-(extend-type Expression
+(defrecord Expression [expression]
   IStringable
   (tostring [self]
     (str self)))
 
-(extend-type Print
+(defrecord Print [expression]
   IStringable
-  (tostring [self]
-    (format "(print %s)" (tostring (:expression self)))))
+  (tostring [_]
+    (format "(print %s)" (tostring expression))))
 
-(extend-type Var
+(defrecord Var [^Token name initializer]
   IStringable
-  (tostring [{:keys [name initializer]}]
+  (tostring [_]
     (if initializer
       (format "(var %s %s)" (:lexeme name) (tostring initializer))
       (format "(var %s nil)" (:lexeme name)))))
 
-(extend-type Block
+(defrecord Block [statements]
   IStringable
-  (tostring [{:keys [statements]}]
+  (tostring [_]
     (format "(do %s)" (str/join " " (map tostring statements)))))
 
-(extend-type If
+(defrecord If [condition, then, else]
   IStringable
-  (tostring [{:keys [condition then else]}]
+  (tostring [_]
     (if else
       (format "(if %s %s %s)" (tostring condition) (tostring then) (tostring else))
       (format "(if %s %s)" (tostring condition) (tostring then)))))
 
-(extend-type While
-  IStringable
-  (tostring [{:keys [condition body]}]
-    (format "(while %s %s)" (tostring condition) (tostring body))))
-
-(extend-type Break
+(defrecord While [condition, body]
   IStringable
   (tostring [_]
-    "(break)"))
+    (format "(while %s %s)" (tostring condition) (tostring body))))
+
+(defrecord For [initializer, body])
+
+(defrecord Break [^Token break]
+  IStringable
+  (tostring [_] "(break)"))
+
+(defrecord LoxCallable [arity, function]
+  IStringable
+  (tostring [_] "#<native fn>"))
+
+(defrecord Function [^Token name, params, body]
+  IStringable
+  (tostring [_]
+    (format "(fn %s [%s] %s)"
+            (tostring name)
+            (str/join " " (map tostring params))
+            (tostring body))))
+
+(defrecord Return [^Token keyword, value]
+  IStringable
+  (tostring [_]
+    (if (some? value)
+      (format "(return %s)" (tostring value))
+      (format "(return)"))))
 
 (defn tostring-ast [ast]
   (tostring ast))
