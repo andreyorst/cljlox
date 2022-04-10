@@ -15,3 +15,6 @@
 
 (defprotocol ICallable
   (call [self arguments token env]))
+
+(defprotocol Resolver
+  (lox-resolve [this scope-stack]))

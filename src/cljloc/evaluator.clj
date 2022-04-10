@@ -1,8 +1,13 @@
 (ns cljloc.evaluator
   "Evaluate AST."
   (:require [cljloc.ast :as ast]
-            [cljloc.protocols :refer [ICallable call IStringable tostring]])
-  (:import [cljloc.ast Binary Unary Grouping Print Var Variable Assign Literal Block If Logical While Break Call LoxCallable Function Return]
+            [cljloc.protocols :refer [ICallable call IStringable tostring lox-resolve]]
+            [cljloc.resolver :refer [*locals]]
+            [cljloc.macros :refer [with-out-err]])
+  (:import [cljloc.ast
+            Binary Unary Grouping Print Var Variable Assign Literal
+            Block If Logical While Break Call LoxCallable Function
+            Return]
            [clojure.lang ExceptionInfo]))
 
 (defn- make-env
@@ -11,11 +16,8 @@
    (atom {:enclosing parent
           :values {}})))
 
-(def builtins
-  {:values {"clock" (LoxCallable. 0 (fn [] (/ (System/currentTimeMillis) 1000.0)))}
-   :enclosing nil})
-
-(def *global-env (make-env builtins))
+(def *global-env (atom {:values {"clock" (LoxCallable. 0 (fn [] (/ (System/currentTimeMillis) 1000.0)))}
+                        :enclosing nil}))
 
 (defn- runtime-error
   ([msg]
@@ -35,9 +37,9 @@
 
 (extend-protocol ICallable
   Object
-  (call [self & rest] (runtime-error "Can only call functions and classes."))
+  (call [self & rest] (runtime-error (format "Can only call functions and classes. Tried to call %s" (class self))))
   nil
-  (call [self & rest] (runtime-error "Can only call functions and classes.")))
+  (call [self & rest] (runtime-error "Can only call functions and classes. Tried to call nil.")))
 
 (defn- truth? [val]
   (if (some? val)
@@ -55,10 +57,6 @@
 
 (defprotocol IInterpretable
   (evaluate [self env]))
-
-#_(extend-type Object
-    IInterpretable
-    (evaluate [self _] self))
 
 (extend-type Literal
   IInterpretable
@@ -123,67 +121,46 @@
              (evaluate initializer env)))
     nil))
 
-(defn- get-variable
+(defn- ancestor
   "Recursively walks environments upwards looking for a variable."
-  [env var]
-  (let [env @env
-        values (:values env)
-        name (:lexeme var)]
-    (if (contains? values name)
-      (get values name)
-      (if-some [enclosing (:enclosing env)]
-        (recur enclosing var)
-        (runtime-error (format "Undefined variable '%s'." name) {:token var})))))
+  [env distance]
+  (loop [i 0 env env]
+    (if (< i distance)
+      (recur (inc i) (:enclosing @env))
+      env)))
+
+(defn- lookup-variable [{:keys [name] :as expr} env]
+  (get-in @(if-let [distance (get @*locals expr)]
+             (ancestor env distance)
+             *global-env)
+          [:values (:lexeme name)]))
 
 (extend-type Variable
   IInterpretable
-  (evaluate [{:keys [name]} env]
-    (get-variable env name)))
-
-(defn- assign [env name val]
-  (let [env' @env
-        var (:lexeme name)]
-    (if (contains? (:values env') var)
-      (swap! env assoc-in [:values var] val)
-      (if-some [enclosing (:enclosing env')]
-        (recur enclosing name val)
-        (runtime-error (format "Undefined variable '%s'." var) {:token name})))))
+  (evaluate [expr env]
+    (lookup-variable expr env)))
 
 (extend-type Assign
   IInterpretable
-  (evaluate [{:keys [name value]} env]
-    (let [val (evaluate value env)]
-      (try
-        (assign env name val)
-        (catch ExceptionInfo e
-          (throw e))
-        (catch Exception _
-          (runtime-error (format "Can't assign %s." (:lexeme name)) {:token name})))
-      val)))
-
-(defn- in-loop-ctx? [env]
-  (let [env' @env]
-    (if (:loop env')
-      true
-      (if-some [enclosing (:enclosing env')]
-        (recur enclosing)
-        false))))
+  (evaluate [{:keys [name value] :as expr} env]
+    (let [val (evaluate value env)
+          env (if-let [distance (get @*locals expr)]
+                (ancestor env distance)
+                *global-env)]
+      (if (contains? (:values @env) (:lexeme name))
+        (swap! env assoc-in [:values (:lexeme name)] val)
+        (runtime-error (format "Undefined variable '%s'." (:lexeme name)) {:token name})))))
 
 (extend-type Break
   IInterpretable
   (evaluate [{:keys [break]} env]
-    (if (in-loop-ctx? env)
-      (throw (ex-info "break" {:type :break}))
-      (runtime-error "Break outside of the loop" {:token break}))))
+    (throw (ex-info "break" {:type :break :token break}))))
 
 (extend-type Block
   IInterpretable
   (evaluate [{:keys [statements]} env]
     (let [env' (make-env env)]
-      (loop [statements statements]
-        (when-let [[statement & statements] (seq statements)]
-          (evaluate statement env')
-          (recur statements))))))
+      (reduce (fn [_ statement] (evaluate statement env')) nil statements))))
 
 (extend-type If
   IInterpretable
@@ -210,7 +187,6 @@
   IInterpretable
   (evaluate [{:keys [condition body]} env]
     (try
-      (swap! env assoc :loop true)
       (while (truth? (evaluate condition env))
         (evaluate body env))
       (catch ExceptionInfo e
@@ -227,9 +203,10 @@
 
 (extend-type Return
   IInterpretable
-  (evaluate [{:keys [value]} env]
+  (evaluate [{:keys [keyword value] :as self} env]
     (throw (ex-info "return" {:type :return,
-                              :value (when value (evaluate value env))}))))
+                              :value (when value (evaluate value env))
+                              :token keyword}))))
 
 (defrecord LoxFunction [^Function declaration, closure]
   ICallable
@@ -262,10 +239,19 @@
    (try
      (-> ast (evaluate *global-env) tostring)
      (catch ExceptionInfo e
-       (let [data (ex-data e)]
-         (if (= ::runtime-error (:type data))
-           (let [{{[line col] :pos} :token} data]
-             (binding [*out* *err*]
-               (println (format "%s [%s:%s] Runtime error: %s\n"
-                                file line col (ex-message e)))))
-           (throw (ex-info "Eval error" {} e))))))))
+       (with-out-err
+         (let [data (ex-data e)]
+           (case (:type data)
+             ::runtime-error
+             (let [{{[line col] :pos} :token} data]
+               (println (format "%s [%s:%s] Runtime error: %s"
+                                file line col (ex-message e))))
+             :break
+             (let [{{[line col] :pos} :token} data]
+               (println (format "%s [%s:%s] Runtime error: break outside of a loop."
+                                file line col)))
+             :return
+             (let [{{[line col] :pos} :token} data]
+               (println (format "%s [%s:%s] Runtime error: return outside of a function."
+                                file line col)))
+             (throw (ex-info "Eval error" {} e)))))))))
