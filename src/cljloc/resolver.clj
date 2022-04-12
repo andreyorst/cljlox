@@ -171,5 +171,9 @@
 
 (extend-type Unary
   Resolver
-  (lox-resolve [{:keys [ right]} stack]
+  (lox-resolve [{:keys [right]} stack]
     (lox-resolve right stack)))
+
+(defn resolve-expr [expr]
+  (let [[_ locals] (lox-resolve expr [[] {}])]
+    locals))
