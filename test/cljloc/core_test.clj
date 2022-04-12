@@ -24,11 +24,11 @@
   (testing "defining a global variable with assignment of another itself"
     (is (= "nil" (run "var x = x;"))))
   (testing "defining a local variable"
-    (is (= "nil" (run "{var x;}"))))
+    (is (= "nil" (run "{var _x;}"))))
   (testing "defining a local variable with assignment"
-    (is (= "nil" (run "{var x = nil;}"))))
+    (is (= "nil" (run "{var _x = nil;}"))))
   (testing "defining a local variable with assignment of another variable"
-    (is (= "nil" (run "{var x = nil; var y = x;}"))))
+    (is (= "nil" (run "{var x = nil; var _y = x;}"))))
   (testing "defining a local variable with assignment of another itself"
     (is (thrown? ExceptionInfo (run "{var x = x;}")))))
 
@@ -117,7 +117,7 @@
   (testing "returning anonymous function that closes over a local variable"
     (is (= "27" (run "var f; {var x = 17; f = fun (y) {return x + y;};} f(10)"))))
   (testing "mutable scope bug test"
-    (is (= "1" (run "var x = 1; var y; {fun f() { y = x; } var x = 2; f()} y")))))
+    (is (= "1" (run "var x = 1; var y; {fun f() { y = x; } var x = 2; x; f()} y")))))
 
 (deftest iteration-test
   (testing "empty while loop"

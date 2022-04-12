@@ -10,7 +10,6 @@
             Binary Unary Grouping Print Var Variable Assign Literal
             Block If Logical While Break Call Function Return]))
 
-;; TODO: Extend the resolver to report an error if a local variable is never used.
 ;; TODO: Extend the resolver to associate a unique index for each local
 ;;       variable declared in a scope. When resolving a variable access,
 ;;       look up both the scope the variable is in and its index and
@@ -28,6 +27,10 @@
   [(conj scope-stack {}) locals])
 
 (defn end-scope [[scope-stack locals]]
+  (doseq [[var status] (peek scope-stack)]
+    (when (and (not= status :used)
+               (not (re-find #"^_" var)))
+      (resolve-error (format "Unused local variable: '%s'. Start variable name with underscore if variable is unused." var))))
   [(pop scope-stack) locals])
 
 (defn scope-get [scope-stack token]
@@ -69,7 +72,8 @@
   (when (seq scope-stack)
     (loop [i (dec (count scope-stack))]
       (if (contains? (get scope-stack i) (:lexeme name))
-        [scope-stack (assoc locals expr (- (count scope-stack) 1 i))]
+        [(assoc-in scope-stack [i (:lexeme name)] :used)
+         (assoc locals expr (- (count scope-stack) 1 i))]
         (if (> i 0)
           (recur (dec i))
           [scope-stack locals])))))
@@ -100,10 +104,10 @@
 (extend-type Function
   Resolver
   (lox-resolve [{:keys [params name body] :as expr} stack]
-    (->> stack
-         (declare-var name)
-         (define-var name)
-         (resolve-function expr))))
+    (cond->> stack
+      (some? name) (declare-var name)
+      (some? name)   (define-var name)
+      true (resolve-function expr))))
 
 (extend-type If
   Resolver
