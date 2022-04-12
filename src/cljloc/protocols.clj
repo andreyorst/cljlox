@@ -14,7 +14,7 @@
   (tostring [_] "nil"))
 
 (defprotocol ICallable
-  (call [self arguments token env]))
+  (call [self arguments token env locals]))
 
 (defprotocol Resolver
-  (lox-resolve [this scope-stack]))
+  (lox-resolve [this [scope-stack locals]]))

@@ -17,12 +17,6 @@
 ;;       store that. In the interpreter, use that to quickly access a
 ;;       variable by its index instead of using a map.
 
-;; TODO: Think about removing state
-(def *locals (atom {}))
-
-(defn register-expr-scope [expr i]
-  (swap! *locals assoc expr i))
-
 (defn- resolve-error
   ([msg]
    (resolve-error msg {}))
@@ -30,11 +24,11 @@
    {:pre [(map? data)]}
    (throw (ex-info msg (assoc data :type ::error)))))
 
-(defn begin-scope [scope-stack]
-  (conj scope-stack {}))
+(defn begin-scope [[scope-stack locals]]
+  [(conj scope-stack {}) locals])
 
-(defn end-scope [scope-stack]
-  (pop scope-stack))
+(defn end-scope [[scope-stack locals]]
+  [(pop scope-stack) locals])
 
 (defn scope-get [scope-stack token]
   (get-in scope-stack [(dec (count scope-stack)) (:lexeme token)]))
@@ -44,139 +38,138 @@
 
 (extend-type Block
   Resolver
-  (lox-resolve [{:keys [statements]} scope-stack]
+  (lox-resolve [{:keys [statements]} stack]
     (->> statements
-         (reduce (fn [scope-stack statement]
-                   (lox-resolve statement scope-stack))
-                 (begin-scope scope-stack))
+         (reduce (fn [stack statement]
+                   (lox-resolve statement stack))
+                 (begin-scope stack))
          end-scope)))
 
-(defn- declare-var [name scope-stack]
+(defn- declare-var [name [scope-stack locals]]
   (when (get-in scope-stack [(dec (count scope-stack)) (:lexeme name)])
     (resolve-error "Already a variable with this name in this scope." {:token name}))
-  (if (seq scope-stack)
-    (scope-set scope-stack name false)
-    scope-stack))
+  [(if (seq scope-stack)
+     (scope-set scope-stack name false)
+     scope-stack) locals])
 
-(defn- define-var [name scope-stack]
-  (if (seq scope-stack)
-    (scope-set scope-stack name true)
-    scope-stack))
+(defn- define-var [name [scope-stack locals]]
+  [(if (seq scope-stack)
+     (scope-set scope-stack name true)
+     scope-stack)
+   locals])
 
 (extend-type Var
   Resolver
-  (lox-resolve [{:keys [name initializer]} scope-stack]
-    (cond->> (declare-var name scope-stack)
+  (lox-resolve [{:keys [name initializer]} stack]
+    (cond->> (declare-var name stack)
       (some? initializer) (lox-resolve initializer)
       true (define-var name))))
 
-(defn- resolve-local [expr name scope-stack]
+(defn- resolve-local [expr name [scope-stack locals]]
   (when (seq scope-stack)
     (loop [i (dec (count scope-stack))]
       (if (contains? (get scope-stack i) (:lexeme name))
-        (register-expr-scope expr (- (count scope-stack) 1 i))
-        (when (> i 0)
-          (recur (dec i)))))))
+        [scope-stack (assoc locals expr (- (count scope-stack) 1 i))]
+        (if (> i 0)
+          (recur (dec i))
+          [scope-stack locals])))))
 
 (extend-type Variable
   Resolver
-  (lox-resolve [{:keys [name] :as expr} scope-stack]
+  (lox-resolve [{:keys [name] :as expr} [scope-stack locals]]
     (when (and (seq scope-stack)
                (false? (get-in scope-stack [(dec (count scope-stack)) (:lexeme name)])))
       (resolve-error "Can't read local variable in its own initializer." {:token name}))
-    (resolve-local expr name scope-stack)
-    scope-stack))
+    (resolve-local expr name [scope-stack locals])))
 
 (extend-type Assign
   Resolver
-  (lox-resolve [{:keys [name value] :as expr} scope-stack]
-    (let [scope-stack (lox-resolve value scope-stack)]
-      (resolve-local expr name scope-stack)
-      scope-stack)))
+  (lox-resolve [{:keys [name value] :as expr} stack]
+    (resolve-local expr name (lox-resolve value stack))))
 
-(defn- resolve-function [{:keys [params body]} scope-stack]
+(defn- resolve-function [{:keys [params body]} stack]
   (->> params
-       (reduce (fn [scope-stack param]
-                 (->> scope-stack
+       (reduce (fn [stack param]
+                 (->> stack
                       (declare-var (:name param))
                       (define-var (:name param))))
-               (begin-scope scope-stack))
+               (begin-scope stack))
        (lox-resolve body)
        end-scope))
 
 (extend-type Function
   Resolver
-  (lox-resolve [{:keys [params name body] :as expr} scope-stack]
-    (->> scope-stack
+  (lox-resolve [{:keys [params name body] :as expr} stack]
+    (->> stack
          (declare-var name)
          (define-var name)
          (resolve-function expr))))
 
 (extend-type If
   Resolver
-  (lox-resolve [{:keys [condition then else]} scope-stack]
-    (cond->> scope-stack
+  (lox-resolve [{:keys [condition then else]} stack]
+    (cond->> stack
       true (lox-resolve condition)
       true (lox-resolve then)
       (some? else) (lox-resolve else))))
 
 (extend-type Print
   Resolver
-  (lox-resolve [{:keys [expression]} scope-stack]
-    (lox-resolve expression scope-stack)))
+  (lox-resolve [{:keys [expression]} stack]
+    (lox-resolve expression stack)))
 
 (extend-type Return
   Resolver
-  (lox-resolve [{:keys [value]} scope-stack]
+  (lox-resolve [{:keys [value]} stack]
     (if value
-      (lox-resolve value scope-stack)
-      scope-stack)))
+      (lox-resolve value stack)
+      stack)))
 
 (extend-type While
   Resolver
-  (lox-resolve [{:keys [condition body]} scope-stack]
-    (->> scope-stack
+  (lox-resolve [{:keys [condition body]} stack]
+    (->> stack
          (lox-resolve condition)
          (lox-resolve body))))
 
 (extend-type Binary
   Resolver
-  (lox-resolve [{:keys [left right]} scope-stack]
-    (->> scope-stack
+  (lox-resolve [{:keys [left right]} stack]
+    (->> stack
          (lox-resolve left)
          (lox-resolve right))))
 
 (extend-type Call
   Resolver
-  (lox-resolve [{:keys [callee arguments]} scope-stack]
-    (reduce (fn [scope-stack arg]
-              (lox-resolve arg scope-stack))
-            (lox-resolve callee scope-stack)
+  (lox-resolve [{:keys [callee arguments]} [scope-stack locals]]
+    (reduce (fn [[scope-stack locals] arg]
+              (lox-resolve arg [scope-stack locals]))
+            (lox-resolve callee [scope-stack locals])
             arguments)))
 
 (extend-type Grouping
   Resolver
-  (lox-resolve [{:keys [expression]} scope-stack]
-    (lox-resolve expression scope-stack)))
+  (lox-resolve [{:keys [expression]} stack]
+    (lox-resolve expression stack)))
 
 (extend-type Literal
   Resolver
-  (lox-resolve [_ scope-stack]
-    scope-stack))
+  (lox-resolve [_ stack]
+    stack))
 
 (extend-type Break
   Resolver
-  (lox-resolve [_ scope-stack]
-    scope-stack))
+  (lox-resolve [_ stack]
+    stack))
 
 (extend-type Logical
   Resolver
-  (lox-resolve [{:keys [left right]} scope-stack]
-    (->> scope-stack
+  (lox-resolve [{:keys [left right]} stack]
+    (->> stack
          (lox-resolve left)
          (lox-resolve right))))
 
 (extend-type Unary
   Resolver
-  (lox-resolve [{:keys [ right]} scope-stack]
-    (lox-resolve right scope-stack)))
+  (lox-resolve [{:keys [ right]} stack]
+    (lox-resolve right stack)))

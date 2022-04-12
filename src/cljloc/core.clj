@@ -3,7 +3,7 @@
             [cljloc.parser :refer [parse]]
             [cljloc.evaluator :refer [interpret]]
             [cljloc.protocols :refer [lox-resolve]]
-            [cljloc.resolver :as resolver :refer [*locals]]
+            [cljloc.resolver :as resolver]
             [cljloc.macros :refer [with-out-err]])
   (:import [clojure.lang ExceptionInfo])
   (:gen-class))
@@ -18,13 +18,13 @@
        (with-out-err
          (doseq [error errors]
            (println (format fmt (str error)))))
-       (let [expressions (parse tokens)]
-         (reset! *locals {})
-         (doseq [expr expressions]
-           (lox-resolve expr []))
+       (let [expressions (parse tokens)
+             locals (reduce (fn [locals expr]
+                              (merge locals (second (lox-resolve expr [[] {}]))))
+                            {} expressions)]
          (reduce (fn [_ expr]
                    (when (seq expr)
-                     (interpret expr)))
+                     (interpret expr locals)))
                  nil expressions))))))
 
 (defn run-file [file]

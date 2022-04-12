@@ -2,7 +2,6 @@
   "Evaluate AST."
   (:require [cljloc.ast :as ast]
             [cljloc.protocols :refer [ICallable call IStringable tostring]]
-            [cljloc.resolver :refer [*locals]]
             [cljloc.macros :refer [with-out-err]])
   (:import [cljloc.ast
             Binary Unary Grouping Print Var Variable Assign Literal
@@ -26,7 +25,7 @@
 
 (extend-type LoxCallable
   ICallable
-  (call [{:keys [arity function]} arguments token env]
+  (call [{:keys [arity function]} arguments token env _]
     (if (= arity (count arguments))
       (apply function arguments)
       (runtime-error
@@ -54,22 +53,22 @@
      (runtime-error "Operands must be numbers" {:token op}))))
 
 (defprotocol IInterpretable
-  (evaluate [self env]))
+  (evaluate [self env locals]))
 
 (extend-type Literal
   IInterpretable
-  (evaluate [{value :value} _env]
+  (evaluate [{value :value} _ _]
     value))
 
 (extend-type Grouping
   IInterpretable
-  (evaluate [{expr :expression} env]
-    (evaluate expr env)))
+  (evaluate [{expr :expression} env locals]
+    (evaluate expr env locals)))
 
 (extend-type Unary
   IInterpretable
-  (evaluate [{:keys [operator right]} env]
-    (let [right (evaluate right env)]
+  (evaluate [{:keys [operator right]} env locals]
+    (let [right (evaluate right env locals)]
       (case (:type operator)
         :minus (do (check-number-op! operator right)
                    (- right))
@@ -78,9 +77,9 @@
 
 (extend-type Binary
   IInterpretable
-  (evaluate [{:keys [left operator right]} env]
-    (let [left (evaluate left env)
-          right (evaluate right env)]
+  (evaluate [{:keys [left operator right]} env locals]
+    (let [left (evaluate left env locals)
+          right (evaluate right env locals)]
       (if (= :plus (:type operator))
         (let [op (cond (and (double? left) (double? right)) +
                        (and (string? left) (string? right)) str
@@ -105,18 +104,18 @@
 
 (extend-type Print
   IInterpretable
-  (evaluate [{:keys [expression]} env]
-    (println (tostring (evaluate expression env)))
+  (evaluate [{:keys [expression]} env locals]
+    (println (tostring (evaluate expression env locals)))
     nil))
 
 (extend-type Var
   IInterpretable
-  (evaluate [{:keys [name initializer]} env]
+  (evaluate [{:keys [name initializer]} env locals]
     (swap! env
            assoc-in
            [:values (:lexeme name)]
            (when (some? initializer)
-             (evaluate initializer env)))
+             (evaluate initializer env locals)))
     nil))
 
 (defn- ancestor
@@ -127,22 +126,22 @@
       (recur (inc i) (:enclosing @env))
       env)))
 
-(defn- lookup-variable [{:keys [name] :as expr} env]
-  (get-in @(if-let [distance (get @*locals expr)]
+(defn- lookup-variable [{:keys [name] :as expr} env locals]
+  (get-in @(if-let [distance (get locals expr)]
              (ancestor env distance)
              *global-env)
           [:values (:lexeme name)]))
 
 (extend-type Variable
   IInterpretable
-  (evaluate [expr env]
-    (lookup-variable expr env)))
+  (evaluate [expr env locals]
+    (lookup-variable expr env locals)))
 
 (extend-type Assign
   IInterpretable
-  (evaluate [{:keys [name value] :as expr} env]
-    (let [val (evaluate value env)
-          env (if-let [distance (get @*locals expr)]
+  (evaluate [{:keys [name value] :as expr} env locals]
+    (let [val (evaluate value env locals)
+          env (if-let [distance (get locals expr)]
                 (ancestor env distance)
                 *global-env)]
       (if (contains? (:values @env) (:lexeme name))
@@ -152,43 +151,43 @@
 
 (extend-type Break
   IInterpretable
-  (evaluate [{:keys [break]} env]
+  (evaluate [{:keys [break]} env _]
     (throw (ex-info "break" {:type :break :token break}))))
 
 (extend-type Block
   IInterpretable
-  (evaluate [{:keys [statements]} env]
+  (evaluate [{:keys [statements]} env locals]
     (let [env' (make-env env)]
-      (reduce (fn [_ statement] (evaluate statement env')) nil statements))))
+      (reduce (fn [_ statement] (evaluate statement env' locals)) nil statements))))
 
 (extend-type If
   IInterpretable
-  (evaluate [{:keys [condition then else]} env]
-    (let [test (evaluate condition env)]
+  (evaluate [{:keys [condition then else]} env locals]
+    (let [test (evaluate condition env locals)]
       (if (truth? test)
-        (evaluate then env)
+        (evaluate then env locals)
         (when else
-          (evaluate else env))))))
+          (evaluate else env locals))))))
 
 (extend-type Logical
   IInterpretable
-  (evaluate [{:keys [left operator right]} env]
-    (let [left (evaluate left env)]
+  (evaluate [{:keys [left operator right]} env locals]
+    (let [left (evaluate left env locals)]
       (case (:type operator)
         :or (if (truth? left)
               left
-              (evaluate right env))
+              (evaluate right env locals))
         :and (if (not (truth? left))
                left
-               (evaluate right env))
+               (evaluate right env locals))
         (runtime-error "Unsupported logical operator" {:token operator})))))
 
 (extend-type While
   IInterpretable
-  (evaluate [{:keys [condition body]} env]
+  (evaluate [{:keys [condition body]} env locals]
     (try
-      (while (truth? (evaluate condition env))
-        (evaluate body env))
+      (while (truth? (evaluate condition env locals))
+        (evaluate body env locals))
       (catch ExceptionInfo e
         (if (= :break (:type (ex-data e)))
           nil
@@ -196,26 +195,26 @@
 
 (extend-type Call
   IInterpretable
-  (evaluate [{:keys [callee arguments]} env]
-    (let [function (evaluate callee env)
-          args (map #(evaluate % env) arguments)]
-      (call function args (:name callee) env))))
+  (evaluate [{:keys [callee arguments]} env locals]
+    (let [function (evaluate callee env locals)
+          args (map #(evaluate % env locals) arguments)]
+      (call function args (:name callee) env locals))))
 
 (extend-type Return
   IInterpretable
-  (evaluate [{:keys [keyword value] :as self} env]
+  (evaluate [{:keys [keyword value] :as self} env locals]
     (throw (ex-info "return" {:type :return,
-                              :value (when value (evaluate value env))
+                              :value (when value (evaluate value env locals))
                               :token keyword}))))
 
 (defrecord LoxFunction [^Function declaration, closure]
   ICallable
-  (call [{{:keys [params body]} :declaration} args _ _]
+  (call [{{:keys [params body]} :declaration} args _ _ locals]
     (try
       (let [env (make-env closure)]
         (doseq [[arg val] (map vector params args)]
           (swap! env assoc-in [:values (:lexeme (:name arg))] val))
-        (evaluate body env))
+        (evaluate body env locals))
       (catch ExceptionInfo e
         (let [data (ex-data e)]
           (if (= :return (:type data))
@@ -227,17 +226,17 @@
 
 (extend-type Function
   IInterpretable
-  (evaluate [{:keys [name] :as self} env]
+  (evaluate [{:keys [name] :as self} env locals]
     (let [f (LoxFunction. self env)]
       (when name
         (swap! env assoc-in [:values (:lexeme name)] f))
       f)))
 
 (defn interpret
-  ([ast] (interpret ast "stdin"))
-  ([ast file]
+  ([ast locals] (interpret ast locals "stdin"))
+  ([ast locals file]
    (try
-     (-> ast (evaluate *global-env) tostring)
+     (-> ast (evaluate *global-env locals) tostring)
      (catch ExceptionInfo e
        (with-out-err
          (let [data (ex-data e)]
