@@ -1,7 +1,7 @@
 (ns cljloc.evaluator
   "Evaluate AST."
   (:require [cljloc.ast :as ast]
-            [cljloc.protocols :refer [ICallable call IStringable tostring lox-resolve]]
+            [cljloc.protocols :refer [ICallable call IStringable tostring]]
             [cljloc.resolver :refer [*locals]]
             [cljloc.macros :refer [with-out-err]])
   (:import [cljloc.ast
@@ -10,14 +10,12 @@
             Return]
            [clojure.lang ExceptionInfo]))
 
-(defn- make-env
-  ([] (make-env nil))
-  ([parent]
-   (atom {:enclosing parent
-          :values {}})))
+(def globals {"clock" (LoxCallable. 0 (fn [] (/ (System/currentTimeMillis) 1000.0)))})
+(def *global-env (atom {:values globals :enclosing nil}))
 
-(def *global-env (atom {:values {"clock" (LoxCallable. 0 (fn [] (/ (System/currentTimeMillis) 1000.0)))}
-                        :enclosing nil}))
+(defn- make-env [parent]
+  (atom {:enclosing parent
+         :values {}}))
 
 (defn- runtime-error
   ([msg]
@@ -149,7 +147,8 @@
                 *global-env)]
       (if (contains? (:values @env) (:lexeme name))
         (swap! env assoc-in [:values (:lexeme name)] val)
-        (runtime-error (format "Undefined variable '%s'." (:lexeme name)) {:token name})))))
+        (runtime-error (format "Undefined variable '%s'." (:lexeme name)) {:token name}))
+      nil)))
 
 (extend-type Break
   IInterpretable
@@ -181,7 +180,8 @@
               (evaluate right env))
         :and (if (not (truth? left))
                left
-               (evaluate right env))))))
+               (evaluate right env))
+        (runtime-error "Unsupported logical operator" {:token operator})))))
 
 (extend-type While
   IInterpretable
@@ -223,7 +223,7 @@
             (throw e))))))
   IStringable
   (tostring [self]
-    (format "#<function: %s>" (->> self :declaration :name :lexeme))))
+    (format "#<function: %s>" (or (->> self :declaration :name :lexeme) "anonymous"))))
 
 (extend-type Function
   IInterpretable

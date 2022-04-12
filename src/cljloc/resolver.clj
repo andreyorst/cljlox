@@ -98,8 +98,8 @@
   (->> params
        (reduce (fn [scope-stack param]
                  (->> scope-stack
-                      (declare-var param)
-                      (define-var param)))
+                      (declare-var (:name param))
+                      (define-var (:name param))))
                (begin-scope scope-stack))
        (lox-resolve body)
        end-scope))

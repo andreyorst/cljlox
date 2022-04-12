@@ -113,6 +113,3 @@
     (if (some? value)
       (format "(return %s)" (tostring value))
       (format "(return)"))))
-
-(defn tostring-ast [ast]
-  (tostring ast))

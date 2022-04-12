@@ -1,7 +1,8 @@
 (ns cljloc.parser
   "A recursive descent parser.
   Main entry point is a `parse` function."
-  (:require [cljloc.ast :as ast])
+  (:require [cljloc.ast :as ast]
+            [cljloc.macros :refer [with-out-err]])
   (:import [cljloc.ast Binary Unary Grouping Literal Print Expression Var Variable Assign Block If Logical While Break Call Function Return]
            [clojure.lang ExceptionInfo]))
 
@@ -257,7 +258,8 @@
     [(Var. name value) (second (consume tokens n' :semicolon "Expect ';' after value."))]))
 
 (defn- fn-declaration [tokens n kind]
-  (let [[name n] (try (consume tokens n :identifier (format "Expected %s name." kind))
+  (let [fun-token-n (dec n)
+        [name n] (try (consume tokens n :identifier (format "Expected %s name." kind))
                       (catch ExceptionInfo e
                         (let [{:keys [tokens n]} (ex-data e)]
                           (if (= :left_paren (:type (get tokens n)))
@@ -276,6 +278,8 @@
         [_ n] (consume tokens n :right_paren "Expect ')' after parameters.")
         [_ n] (consume tokens n :left_brace (format "Expect '{' before %s body." kind))
         [body n] (block tokens n)]
+    (when (> (count args) 255)
+      (parse-error "Can't have more than 255 arguments." {:tokens tokens :n fun-token-n}))
     [(Function. name args body) n]))
 
 (defn- declaration [tokens n]
@@ -307,5 +311,12 @@
           (recur (if expr (conj exprs expr) exprs) n))
         exprs))
     (catch ExceptionInfo e
-      (binding [*out* *err*]
-        (println (format "Uncaught error %s: %s" (ex-message e) (ex-data e)) )))))
+      (with-out-err
+        (let [data (ex-data e)]
+          (case (:type data)
+            ::parse-error
+            (let [{:keys [tokens n]} (ex-data e)
+                  token (get tokens n)
+                  [line col] (:pos token)]
+              (println (format "[%s:%s] %s at '%s'" line col (ex-message e) (str token))))
+            (println (format "Uncaught error: %s" (ex-message e)))))))))
