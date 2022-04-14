@@ -8,7 +8,8 @@
             [cljloc.protocols :refer [Resolver lox-resolve]])
   (:import [cljloc.ast
             Binary Unary Grouping Print Var Variable Assign Literal
-            Block If Logical While Break Call Function Return]))
+            Block If Logical While Break Call Function Return
+            LoxClassStatement Get Set This]))
 
 ;; TODO: Extend the resolver to associate a unique index for each local
 ;;       variable declared in a scope. When resolving a variable access,
@@ -29,7 +30,8 @@
 (defn end-scope [[scope-stack locals]]
   (doseq [[var status] (peek scope-stack)]
     (when (and (not= status :used)
-               (not (re-find #"^_" var)))
+               (not (re-find #"^_" var))
+               (not (= "this" var)))
       (resolve-error (format "Unused local variable: '%s'. Start variable name with underscore if variable is unused." var))))
   [(pop scope-stack) locals])
 
@@ -91,22 +93,28 @@
   (lox-resolve [{:keys [name value] :as expr} stack]
     (resolve-local expr name (lox-resolve value stack))))
 
-(defn- resolve-function [{:keys [params body]} stack]
-  (->> params
-       (reduce (fn [stack param]
-                 (->> stack
-                      (declare-var (:name param))
-                      (define-var (:name param))))
-               (begin-scope stack))
-       (lox-resolve body)
-       end-scope))
+(defn- resolve-function
+  ([expr stack] (resolve-function expr :function stack))
+  ([{:keys [params body]} _type [scope-stack locals]]
+   (let [enclosing-function (:function locals)
+         stack [scope-stack (assoc locals :function true)]
+         [scope-stack locals]
+         (->> params
+              (reduce (fn [stack param]
+                        (->> stack
+                             (declare-var (:name param))
+                             (define-var (:name param))))
+                      (begin-scope stack))
+              (lox-resolve body)
+              end-scope)]
+     [scope-stack (assoc locals :function enclosing-function)])))
 
 (extend-type Function
   Resolver
   (lox-resolve [{:keys [params name body] :as expr} stack]
     (cond->> stack
       (some? name) (declare-var name)
-      (some? name)   (define-var name)
+      (some? name) (define-var name)
       true (resolve-function expr))))
 
 (extend-type If
@@ -124,10 +132,12 @@
 
 (extend-type Return
   Resolver
-  (lox-resolve [{:keys [value]} stack]
-    (if value
-      (lox-resolve value stack)
-      stack)))
+  (lox-resolve [{:keys [keyword value]} [scope-stack locals]]
+    (if (:function locals)
+        (if value
+          (lox-resolve value [scope-stack locals])
+          [scope-stack locals])
+        (resolve-error "Can't return from top-level code." {:token keyword}))))
 
 (extend-type While
   Resolver
@@ -177,6 +187,44 @@
   Resolver
   (lox-resolve [{:keys [right]} stack]
     (lox-resolve right stack)))
+
+(extend-type LoxClassStatement
+  Resolver
+  (lox-resolve [{:keys [name methods]} [scope-stack locals]]
+    (let [enclosing-class (:class locals)
+          stack
+          (->> [scope-stack (assoc locals :class true)]
+               (declare-var name)
+               (define-var name)
+               begin-scope
+               ((fn [[scope-stack locals]]
+                  [(assoc-in scope-stack [(dec (count scope-stack)) "this"] true) locals])))
+          [scope-stack locals]
+          (->> methods
+               (reduce (fn [stack method]
+                         (resolve-function method :method stack))
+                       stack)
+               end-scope)]
+      [scope-stack (assoc locals :class enclosing-class)])))
+
+(extend-type Get
+  Resolver
+  (lox-resolve [{:keys [object name]} stack]
+    (lox-resolve object stack)))
+
+(extend-type Set
+  Resolver
+  (lox-resolve [{:keys [object val]} stack]
+    (->> stack
+         (lox-resolve val)
+         (lox-resolve object))))
+
+(extend-type This
+  Resolver
+  (lox-resolve [{:keys [keyword] :as expr} [scope-stack locals]]
+    (if (:class locals)
+      (resolve-local expr keyword [scope-stack locals])
+      (resolve-error "Can't use 'this' outside of a class." {:token keyword}))))
 
 (defn resolve-expr [expr]
   (let [[_ locals] (lox-resolve expr [[] {}])]

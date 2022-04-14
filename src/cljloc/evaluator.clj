@@ -6,7 +6,7 @@
   (:import [cljloc.ast
             Binary Unary Grouping Print Var Variable Assign Literal
             Block If Logical While Break Call LoxCallable Function
-            Return]
+            Return LoxClassStatement Get Set This]
            [clojure.lang ExceptionInfo]))
 
 (def globals {"clock" (LoxCallable. 0 (fn [] (/ (System/currentTimeMillis) 1000.0)))})
@@ -126,7 +126,7 @@
       (recur (inc i) (:enclosing @env))
       env)))
 
-(defn- lookup-variable [{:keys [name] :as expr} env locals]
+(defn- lookup-variable [expr name env locals]
   (get-in @(if-let [distance (get locals expr)]
              (ancestor env distance)
              *global-env)
@@ -135,7 +135,7 @@
 (extend-type Variable
   IInterpretable
   (evaluate [expr env locals]
-    (lookup-variable expr env locals)))
+    (lookup-variable expr (:name expr) env locals)))
 
 (extend-type Assign
   IInterpretable
@@ -207,6 +207,9 @@
                               :value (when value (evaluate value env locals))
                               :token keyword}))))
 
+(defprotocol IBind
+  (bind [self, instance, env]))
+
 (defrecord LoxFunction [^Function declaration, closure]
   ICallable
   (call [{{:keys [params body]} :declaration} args _ _ locals]
@@ -220,9 +223,14 @@
           (if (= :return (:type data))
             (:value data)
             (throw e))))))
+  IBind
+  (bind [self instance env]
+    (let [closure (make-env env)]
+      (swap! closure assoc-in [:values "this"] instance)
+      (LoxFunction. (:declaration self) closure)))
   IStringable
-  (tostring [self]
-    (format "#<function: %s>" (or (->> self :declaration :name :lexeme) "anonymous"))))
+  (tostring [_]
+    (format "#<function: %s>" (or (->> declaration :name :lexeme) "anonymous"))))
 
 (extend-type Function
   IInterpretable
@@ -231,6 +239,60 @@
       (when name
         (swap! env assoc-in [:values (:lexeme name)] f))
       f)))
+
+(extend-type This
+  IInterpretable
+  (evaluate [self env locals]
+    (lookup-variable self (:keyword self) env locals)))
+
+(defn get-prop [{:keys [fields methods] :as self} name env]
+  (let [fields @fields]
+    (cond (contains? fields (:lexeme name))
+          (get fields (:lexeme name))
+          (contains? methods (:lexeme name))
+          (bind (get methods (:lexeme name)) self env)
+          :else
+          (runtime-error (format "Undefined property '%s'." (:lexeme name)) {:token name}))))
+
+(defrecord LoxInstance [class fields methods]
+  IStringable
+  (tostring [_]
+    (format "#<instance: %s>" (:name class))))
+
+(extend-type Get
+  IInterpretable
+  (evaluate [{:keys [object name]} env locals]
+    (let [obj (evaluate object env locals)]
+      (when-not (instance? LoxInstance obj)
+        (runtime-error "Only instances have properties." {:token name}))
+      (get-prop obj name env))))
+
+(extend-type Set
+  IInterpretable
+  (evaluate [{:keys [object name val]} env locals]
+    (let [obj (evaluate object env locals)]
+      (when-not (instance? LoxInstance obj)
+        (runtime-error "Only instances have fields." {:token name}))
+      (swap! (:fields obj) assoc (:lexeme name) (evaluate val env locals)))))
+
+(defrecord LoxClass [^String name, arity, methods]
+  IStringable
+  (tostring [_]
+    (format "#<class: %s>" name))
+  ICallable
+  (call [self _ _ env locals]
+    (LoxInstance. self (atom {}) methods)))
+
+(extend-type LoxClassStatement
+  IInterpretable
+  (evaluate [{:keys [name methods]} env locals]
+    (swap! env assoc-in [:values (:lexeme name)] nil)
+    (let [methods (reduce (fn [methods method]
+                            (assoc methods (:lexeme (:name method)) (LoxFunction. method env)))
+                          {} methods)
+          c (LoxClass. (:lexeme name) 0 methods)]
+      (swap! env assoc-in [:values (:lexeme name)] c)
+      c)))
 
 (defn interpret
   ([ast locals] (interpret ast locals "stdin"))
@@ -245,12 +307,8 @@
              (let [{{[line col] :pos} :token} data]
                (println (format "%s [%s:%s] Runtime error: %s"
                                 file line col (ex-message e))))
-             :break
+             :break                 ; TODO: make this a resolver error
              (let [{{[line col] :pos} :token} data]
                (println (format "%s [%s:%s] Runtime error: break outside of a loop."
-                                file line col)))
-             :return
-             (let [{{[line col] :pos} :token} data]
-               (println (format "%s [%s:%s] Runtime error: return outside of a function."
                                 file line col)))
              (throw (ex-info "Eval error" {} e)))))))))

@@ -3,7 +3,10 @@
   Main entry point is a `parse` function."
   (:require [cljloc.ast :as ast]
             [cljloc.macros :refer [with-out-err]])
-  (:import [cljloc.ast Binary Unary Grouping Literal Print Expression Var Variable Assign Block If Logical While Break Call Function Return]
+  (:import [cljloc.ast
+            Binary Unary Grouping Literal Print Expression Var Variable
+            Assign Block If Logical While Break Call Function Return
+            LoxClassStatement Get Set This]
            [clojure.lang ExceptionInfo]))
 
 (defn- parse-error
@@ -46,6 +49,7 @@
       :identifier [(Variable. token) n]
       :semicolon [nil n]
       :fun (fn-declaration tokens n "function")
+      :this [(This. token) n]
       :eof
       [:eof n]
       (parse-error "Unsupported token" {:tokens tokens :n (dec n)}))))
@@ -67,8 +71,10 @@
 
 (defn- call [tokens n]
   (loop [[expr n] (primary tokens n)]
-    (if (= :left_paren (:type (current tokens n)))
-      (recur (finish-call expr tokens (inc n)))
+    (case (:type (current tokens n))
+      :left_paren (recur (finish-call expr tokens (inc n)))
+      :dot (let [[name n] (consume tokens (inc n) :identifier "Expect property name after '.'.")]
+             (recur [(Get. expr name) n]))
       [expr n])))
 
 (defn- unary [tokens n]
@@ -138,12 +144,15 @@
 (defn- assignment [tokens n]
   (let [[expr n] (or-expr tokens n)]
     (if (= :equal (:type (get tokens n)))
-      (let [equal-n n
-            [value n] (assignment tokens (inc n))]
-        (if (instance? Variable expr)
-          [(Assign. (:name expr) value) n]
-          (parse-error "Invalid assignment target." {:tokens tokens :n equal-n})))
-      [expr n])))
+          (let [equal-n n
+                [value n] (assignment tokens (inc n))]
+            (cond (instance? Variable expr)
+                  [(Assign. (:name expr) value) n]
+                  (instance? Get expr)
+                  [(Set. (:object expr) (:name expr) value) n]
+                  :else
+                  (parse-error "Invalid assignment target." {:tokens tokens :n equal-n})))
+          [expr n])))
 
 (defn- expression [tokens n]
   (assignment tokens n))
@@ -282,13 +291,29 @@
       (parse-error "Can't have more than 255 arguments." {:tokens tokens :n fun-token-n}))
     [(Function. name args body) n]))
 
+(defn- class-declaration [tokens n]
+  (let [[name n] (consume tokens n :identifier "Expected class name.")
+        [_ n] (consume tokens n :left_brace "Expect '{' before class body.")
+        [methods n]
+        (loop [methods []
+               n n]
+          (let [token (current tokens n)]
+            (if (#{:eof :right_brace} (:type token))
+              [methods n]
+              (let [[method n] (fn-declaration tokens n "method")]
+                (recur (conj methods method) n)))))
+        [_ n] (consume tokens n :right_brace "Expect '}' after class body.")]
+    [(LoxClassStatement. name methods) n]))
+
 (defn- declaration [tokens n]
   (try
     (let [token (current tokens n)
           n' (inc n)]
-      (cond (= :fun (:type token)) (fn-declaration tokens n' "function")
-            (= :var (:type token)) (var-declaration tokens n')
-            :else (statement tokens n)))
+      (case (:type token)
+        :class (class-declaration tokens n')
+        :fun (fn-declaration tokens n' "function")
+        :var (var-declaration tokens n')
+        (statement tokens n)))
     (catch ExceptionInfo e
       (let [{type :type} (ex-data e)]
         (if (= type ::parse-error)

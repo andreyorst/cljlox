@@ -113,3 +113,27 @@
     (if (some? value)
       (format "(return %s)" (tostring value))
       (format "(return)"))))
+
+(defrecord Get [object, ^Token name]
+  IStringable
+  (tostring [_]
+    (format "%s.%s" (tostring object) (tostring name))))
+
+(defrecord Set [object, ^Token name, val]
+  IStringable
+  (tostring [_]
+    (format "(set %s.%s %s)" (tostring object) (tostring name) (tostring val))))
+
+(defrecord This [^Token keyword]
+  IStringable
+  (tostring [_]
+    "this"))
+
+(defrecord LoxClassStatement [^Token name, methods]
+  IStringable
+  (tostring [_]
+    (format "(class %s %s)"
+            (tostring name)
+            (->> methods
+                 (map tostring)
+                 (str/join " ")))))

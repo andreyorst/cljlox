@@ -105,8 +105,8 @@
   (testing "arity mismatch"
     (is (nil? (run "fun f (x, y) { return x + y; } f(1)"))))
   (testing "return outside of the function"
-    (is (nil? (run "return;")))
-    (is (nil? (run "while (true) return;"))))
+    (is (thrown? ExceptionInfo (run "return;")))
+    (is (thrown? ExceptionInfo (run "while (true) return;"))))
   (testing "function with more than 255 arguments"
     (is (nil? (run (str "fun f (" (->> (range 256) (map #(str "x" %)) (str/join ", ")) ") {}"))))
     (is (nil? (run (str "f(" (->> (range 256) (clojure.string/join ", ")) ")"))))))
