@@ -307,8 +307,4 @@
              (let [{{[line col] :pos} :token} data]
                (println (format "%s [%s:%s] Runtime error: %s"
                                 file line col (ex-message e))))
-             :break                 ; TODO: make this a resolver error
-             (let [{{[line col] :pos} :token} data]
-               (println (format "%s [%s:%s] Runtime error: break outside of a loop."
-                                file line col)))
              (throw (ex-info "Eval error" {} e)))))))))

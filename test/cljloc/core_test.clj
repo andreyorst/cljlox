@@ -134,7 +134,7 @@
   (testing "break from the loop"
     (is (= "5" (run "var x = 0; for (var i = 0; i < 10;) { i = i + 1; x = i; if (i == 5) break; } x"))))
   (testing "break outside of the loop"
-    (is (nil? (run "break;")))))
+    (is (thrown? ExceptionInfo (run "break;")))))
 
 (deftest logical-test
   (testing "logical operators short-circuit"

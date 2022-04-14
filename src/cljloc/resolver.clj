@@ -141,10 +141,13 @@
 
 (extend-type While
   Resolver
-  (lox-resolve [{:keys [condition body]} stack]
-    (->> stack
-         (lox-resolve condition)
-         (lox-resolve body))))
+  (lox-resolve [{:keys [condition body]} [scope-stack locals]]
+    (let [enclosing-loop (:loop locals)
+          [scope-stack locals]
+          (->> [scope-stack (assoc locals :loop true)]
+               (lox-resolve condition)
+               (lox-resolve body))]
+      [scope-stack (assoc locals :loop enclosing-loop)])))
 
 (extend-type Binary
   Resolver
@@ -173,8 +176,10 @@
 
 (extend-type Break
   Resolver
-  (lox-resolve [_ stack]
-    stack))
+  (lox-resolve [{:keys [break]} [scope-stack locals]]
+    (if (:loop locals)
+      [scope-stack locals]
+      (resolve-error "break outside of a loop." {:token break}))))
 
 (extend-type Logical
   Resolver
