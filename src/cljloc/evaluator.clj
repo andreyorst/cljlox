@@ -210,32 +210,41 @@
 (defprotocol IBind
   (bind [self, instance, env]))
 
-(defrecord LoxFunction [^Function declaration, closure]
+(defrecord LoxFunction [^Function declaration, arity, closure, initializer?]
   ICallable
-  (call [{{:keys [params body]} :declaration} args _ _ locals]
+  (call [{{:keys [name params body]} :declaration} args _ _ locals]
+    (when (not= arity (count args))
+      (runtime-error
+       (format "Expected %s arguments but got %s." arity (count args))
+       {:token name}))
     (try
       (let [env (make-env closure)]
         (doseq [[arg val] (map vector params args)]
           (swap! env assoc-in [:values (:lexeme (:name arg))] val))
-        (evaluate body env locals))
+        (let [res (evaluate body env locals)]
+          (if initializer?
+            (get-in @closure [:values "this"])
+            res)))
       (catch ExceptionInfo e
         (let [data (ex-data e)]
           (if (= :return (:type data))
-            (:value data)
+            (if initializer?
+              (get-in @closure [:values "this"])
+              (:value data))
             (throw e))))))
   IBind
   (bind [self instance env]
     (let [closure (make-env env)]
       (swap! closure assoc-in [:values "this"] instance)
-      (LoxFunction. (:declaration self) closure)))
+      (LoxFunction. (:declaration self) (:arity self) closure initializer?)))
   IStringable
   (tostring [_]
     (format "#<function: %s>" (or (->> declaration :name :lexeme) "anonymous"))))
 
 (extend-type Function
   IInterpretable
-  (evaluate [{:keys [name] :as self} env locals]
-    (let [f (LoxFunction. self env)]
+  (evaluate [{:keys [name params] :as self} env locals]
+    (let [f (LoxFunction. self (count params) env false)]
       (when name
         (swap! env assoc-in [:values (:lexeme name)] f))
       f)))
@@ -280,15 +289,19 @@
   (tostring [_]
     (format "#<class: %s>" name))
   ICallable
-  (call [self _ _ env locals]
-    (LoxInstance. self (atom {}) methods)))
+  (call [self args _ env locals]
+    (let [c (LoxInstance. self (atom {}) methods)]
+      (when (contains? methods "init")
+        (call (bind (get methods "init") c env) args nil env locals))
+      c)))
 
 (extend-type LoxClassStatement
   IInterpretable
   (evaluate [{:keys [name methods]} env locals]
     (swap! env assoc-in [:values (:lexeme name)] nil)
     (let [methods (reduce (fn [methods method]
-                            (assoc methods (:lexeme (:name method)) (LoxFunction. method env)))
+                            (assoc methods (:lexeme (:name method))
+                                   (LoxFunction. method (count (:params method)) env (= "init" (:lexeme (:name method))))))
                           {} methods)
           c (LoxClass. (:lexeme name) 0 methods)]
       (swap! env assoc-in [:values (:lexeme name)] c)

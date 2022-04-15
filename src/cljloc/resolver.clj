@@ -95,9 +95,9 @@
 
 (defn- resolve-function
   ([expr stack] (resolve-function expr :function stack))
-  ([{:keys [params body]} _type [scope-stack locals]]
+  ([{:keys [params body]} type [scope-stack locals]]
    (let [enclosing-function (:function locals)
-         stack [scope-stack (assoc locals :function true)]
+         stack [scope-stack (assoc locals :function type)]
          [scope-stack locals]
          (->> params
               (reduce (fn [stack param]
@@ -134,10 +134,13 @@
   Resolver
   (lox-resolve [{:keys [keyword value]} [scope-stack locals]]
     (if (:function locals)
-        (if value
-          (lox-resolve value [scope-stack locals])
-          [scope-stack locals])
-        (resolve-error "Can't return from top-level code." {:token keyword}))))
+      (if value
+        (if (= :initializer (:function locals))
+          (resolve-error "Can't return a value from an initializer." {:token keyword})
+          (lox-resolve value [scope-stack locals]))
+        [scope-stack locals])
+
+      (resolve-error "Can't return from top-level code." {:token keyword}))))
 
 (extend-type While
   Resolver
@@ -207,7 +210,7 @@
           [scope-stack locals]
           (->> methods
                (reduce (fn [stack method]
-                         (resolve-function method :method stack))
+                         (resolve-function method (if (= "init" (:lexeme (:name method))) :initializer :method) stack))
                        stack)
                end-scope)]
       [scope-stack (assoc locals :class enclosing-class)])))
