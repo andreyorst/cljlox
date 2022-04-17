@@ -31,11 +31,7 @@
   IStringable
   (tostring [_]
     (if (some? value)
-      (let [res (tostring value)]
-        (if (and (number? value)
-                 (re-find #"\.0$" res))
-          (str/replace res #"\.0$" "")
-          res))
+      (tostring value)
       "nil")))
 
 (defrecord Logical [left, ^Token operator, right]
@@ -57,8 +53,8 @@
 
 (defrecord Expression [expression]
   IStringable
-  (tostring [self]
-    (str self)))
+  (tostring [_]
+    (tostring expression)))
 
 (defrecord Print [expression]
   IStringable
@@ -75,7 +71,9 @@
 (defrecord Block [statements]
   IStringable
   (tostring [_]
-    (format "(do %s)" (str/join " " (map tostring statements)))))
+    (if (seq statements)
+      (format "(do %s)" (str/join " " (map tostring statements)))
+      "(do)")))
 
 (defrecord If [condition, then, else]
   IStringable
@@ -105,7 +103,7 @@
     (format "(fn %s [%s] %s)"
             (tostring name)
             (str/join " " (map tostring params))
-            (tostring body))))
+            (str/join " " (map tostring body)))))
 
 (defrecord Return [^Token keyword, value]
   IStringable
@@ -137,7 +135,7 @@
 (defrecord LoxClassStatement [^Token name, ^Variable superclass, methods]
   IStringable
   (tostring [_]
-    (format "(class %s %s)"
+    (format (if (seq methods) "(class %s %s)" "(class %s)")
             (if superclass
               (format "(extends %s %s)" (tostring name) (tostring (:name superclass)))
               (tostring name))

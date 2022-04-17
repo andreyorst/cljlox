@@ -6,6 +6,7 @@
   (:import [cljloc.tokenizer Token]))
 
 (def var-a (Token. :variable "a" nil [0 0]))
+(def var-b (Token. :variable "b" nil [0 0]))
 (def one (Token. :literal "1" 1 [0 0]))
 (def two (Token. :literal "2" 2 [0 0]))
 
@@ -45,6 +46,12 @@
            (tostring (ast/->If (Token. :literal "true" true [0 0]) one nil))))
     (is (= "(if true 1 2)"
            (tostring (ast/->If (Token. :literal "true" true [0 0]) one two))))
+    (is (= "(do 1 (while true (do)))"
+           (tostring (ast/map->Block
+                      {:statements
+                       [(ast/map->Expression {:expression (ast/map->Literal {:value 1.0})})
+                        (ast/map->While {:condition (ast/map->Literal {:value true})
+                                         :body (ast/map->Block {:statements []})})]}))))
     (is (= "(while true 1)"
            (tostring (ast/->While (Token. :literal "true" true [0 0]) one))))
     (is (= "(break)"
@@ -52,7 +59,7 @@
     (is (= "#<native fn>"
            (tostring (ast/->LoxCallable nil nil))))
     (is (= "(fn a [a] a)"
-           (tostring (ast/->Function var-a [var-a] var-a))))
+           (tostring (ast/->Function var-a [var-a] [var-a]))))
     (is (= "(return)"
            (tostring (ast/->Return var-a nil))))
     (is (= "(return a)"
@@ -60,4 +67,20 @@
     (is (= "(a)"
            (tostring (ast/->Call var-a nil []))))
     (is (= "(a a)"
-           (tostring (ast/->Call var-a nil [var-a]))))))
+           (tostring (ast/->Call var-a nil [var-a]))))
+    (is (= "(class a)"
+           (tostring (ast/->LoxClassStatement var-a nil []))))
+    (is (= "this"
+           (tostring (ast/->This :this))))
+    (is (= "this.a"
+           (tostring (ast/->Get (ast/->This :this) var-a))))
+    (is (= "(set this.a 42)"
+           (tostring (ast/->Set (ast/->This :this) var-a 42))))
+    (is (= "super.a"
+           (tostring (ast/->Super :this var-a))))
+    (is (= "(class (extends a b))"
+           (tostring (ast/->LoxClassStatement var-a {:name var-b} []))))
+    (is (= "(class (extends a b) (fn foo [] (return bar)))"
+           (tostring (ast/->LoxClassStatement var-a {:name var-b} [(ast/->Function (Token. :identifier "foo" nil [0 0]) [] [(ast/->Return nil (Token. :identifier "bar" nil [0 0]))])]))))
+    (is (= "(class (extends a b) (fn foo [] (return bar)))"
+           (tostring (ast/->LoxClassStatement var-a {:name var-b} [(ast/->Function (Token. :identifier "foo" nil [0 0]) [] [(ast/->Return nil (Token. :identifier "bar" nil [0 0]))])]))))))

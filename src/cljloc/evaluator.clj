@@ -6,7 +6,7 @@
             [cljloc.macros :refer [with-out-err]])
   (:import [cljloc.tokenizer Token]
            [cljloc.ast
-            Binary Unary Grouping Print Var Variable Assign Literal
+            Expression Binary Unary Grouping Print Var Variable Assign Literal
             Block If Logical While Break Call LoxCallable Function
             Return LoxClassStatement Get Set This Super]
            [clojure.lang ExceptionInfo]))
@@ -319,9 +319,10 @@
   ICallable
   (call [self args _ env locals]
     (let [c (LoxInstance. self (atom {}) methods)]
-      (when (contains? methods "init")
-        (call (bind (get methods "init") c env) args nil env locals))
-      c)))
+      (if-some [method (or (get methods "init")
+                           (get (:methods superclass) "init"))]
+        (call (bind method c (:closure method)) args nil env locals)
+        c))))
 
 (extend-type LoxClassStatement
   IInterpretable
@@ -355,6 +356,11 @@
           obj (env-get-at env (dec distance) "this")
           method (get-class-method superclass method)]
       (bind method obj env))))
+
+(extend-type Expression
+  IInterpretable
+  (evaluate [{:keys [expression]} env locals]
+    (evaluate expression env locals)))
 
 (defn interpret
   ([ast locals] (interpret ast locals "stdin"))

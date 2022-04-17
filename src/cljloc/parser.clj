@@ -9,10 +9,8 @@
             LoxClassStatement Get Set This Super]
            [clojure.lang ExceptionInfo]))
 
-(defn- parse-error
-  ([message] (parse-error message {}))
-  ([message data]
-   (throw (ex-info message (assoc data :type ::parse-error)))))
+(defn- parse-error [message data]
+  (throw (ex-info message (assoc data :type ::parse-error))))
 
 (defn- consume [tokens n type message]
   (let [token (get tokens n)]
