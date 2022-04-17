@@ -1,12 +1,12 @@
-(ns cljloc.resolver
+(ns cljlox.resolver
   "Resolver for Lox AST.
 
   Resolves each variable definition and usage with it's corresponding scope.
   Stores the scope number in the `*locals` atom.
   This atom is later used by evaluator to refer to locals."
-  (:require [cljloc.ast :as ast]
-            [cljloc.protocols :refer [Resolver lox-resolve]])
-  (:import [cljloc.ast
+  (:require [cljlox.ast :as ast]
+            [cljlox.protocols :refer [Resolver lox-resolve]])
+  (:import [cljlox.ast
             Expression Binary Unary Grouping Print Var Variable Assign Literal
             Block If Logical While Break Call Function Return
             LoxClassStatement Get Set This Super]))

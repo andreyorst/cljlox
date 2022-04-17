@@ -1,8 +1,8 @@
-(ns cljloc.ast
-  (:require [cljloc.protocols :refer [IStringable tostring]]
-            [cljloc.tokenizer]
+(ns cljlox.ast
+  (:require [cljlox.protocols :refer [IStringable tostring]]
+            [cljlox.tokenizer]
             [clojure.string :as str])
-  (:import [cljloc.tokenizer Token])
+  (:import [cljlox.tokenizer Token])
   (:gen-class))
 
 (defrecord Binary [left, ^Token operator, right]

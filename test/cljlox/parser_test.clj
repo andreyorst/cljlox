@@ -1,7 +1,7 @@
-(ns cljloc.parser-test
-  (:require [cljloc.parser :refer [parse]]
-            [cljloc.tokenizer :refer [tokenize map->Token]]
-            [cljloc.ast :refer [map->Binary map->Literal]]
+(ns cljlox.parser-test
+  (:require [cljlox.parser :refer [parse]]
+            [cljlox.tokenizer :refer [tokenize map->Token]]
+            [cljlox.ast :refer [map->Binary map->Literal]]
             [clojure.test :refer [deftest is testing]]))
 
 (deftest parser-test

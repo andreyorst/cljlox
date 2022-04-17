@@ -1,7 +1,7 @@
-(ns cljloc.core-test
-  (:require [cljloc.core :refer [run run-file run-prompt -main]]
+(ns cljlox.core-test
+  (:require [cljlox.core :refer [run run-file run-prompt -main]]
             [clojure.test :refer [deftest is testing use-fixtures]]
-            [cljloc.evaluator :as evaluator]
+            [cljlox.evaluator :as evaluator]
             [clojure.string :as str])
   (:import [clojure.lang ExceptionInfo]))
 
@@ -183,12 +183,12 @@
     (let [vals ["42"]
           i (volatile! 0)]
       (with-redefs [read-line (fn [] (let [line (get vals @i)] (vswap! i inc) line))]
-        (is (= "Welcome to CljLoc.\ncljloc> 42\ncljloc> " (with-out-str (-main)))))))
+        (is (= "Welcome to Cljlox.\ncljlox> 42\ncljlox> " (with-out-str (-main)))))))
   (testing "running prompt with resolution error"
     (let [vals [(slurp "test/data/resolve-error.lox")]
           i (volatile! 0)]
       (with-redefs [read-line (fn [] (let [line (get vals @i)] (vswap! i inc) line))]
-        (is (= "Welcome to CljLoc.\ncljloc> [2 10] resolve error: Can't read local variable in its own initializer.\n"
+        (is (= "Welcome to Cljlox.\ncljlox> [2 10] resolve error: Can't read local variable in its own initializer.\n"
                (with-out-str (binding [*err* *out*](-main)))))))))
 
 (deftest main-test

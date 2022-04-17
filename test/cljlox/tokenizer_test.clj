@@ -1,6 +1,6 @@
-(ns cljloc.tokenizer-test
+(ns cljlox.tokenizer-test
   (:require [clojure.test :refer [deftest is testing]]
-            [cljloc.tokenizer :refer [tokenize map->Token]]))
+            [cljlox.tokenizer :refer [tokenize map->Token]]))
 
 (deftest tokenize-test
   (testing "basic tokenization"

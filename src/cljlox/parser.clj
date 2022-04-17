@@ -1,9 +1,9 @@
-(ns cljloc.parser
+(ns cljlox.parser
   "A recursive descent parser.
   Main entry point is a `parse` function."
-  (:require [cljloc.ast :as ast]
-            [cljloc.macros :refer [with-out-err]])
-  (:import [cljloc.ast
+  (:require [cljlox.ast :as ast]
+            [cljlox.macros :refer [with-out-err]])
+  (:import [cljlox.ast
             Binary Unary Grouping Literal Print Expression Var Variable
             Assign Block If Logical While Break Call Function Return
             LoxClassStatement Get Set This Super]
@@ -39,7 +39,7 @@
       :true [(Literal. true) n]
       :false [(Literal. false) n]
       :nil [(Literal. nil) n]
-      (:number | :string) [(Literal. (:literal (previous tokens n))) n]
+      (:number :string) [(Literal. (:literal (previous tokens n))) n]
       :left_paren
       (let [[expr n] (expression tokens n)
             [_ n] (consume tokens n :right_paren "Expect ')' after expression.")]
@@ -186,7 +186,7 @@
          n n]
     (let [token (get tokens n)]
       (case (:type token)
-        (:eof | :right_brace)
+        (:eof :right_brace)
         [statements (second (consume tokens n :right_brace "Expect '}' after block."))]
         (let [[statement n] (declaration tokens n)]
           (if statement

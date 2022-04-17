@@ -1,9 +1,9 @@
-(ns cljloc.core
-  (:require [cljloc.tokenizer :refer [tokenize]]
-            [cljloc.parser :refer [parse]]
-            [cljloc.evaluator :refer [interpret]]
-            [cljloc.resolver :refer [resolve-expr] :as resolver]
-            [cljloc.macros :refer [with-out-err]])
+(ns cljlox.core
+  (:require [cljlox.tokenizer :refer [tokenize]]
+            [cljlox.parser :refer [parse]]
+            [cljlox.evaluator :refer [interpret]]
+            [cljlox.resolver :refer [resolve-expr] :as resolver]
+            [cljlox.macros :refer [with-out-err]])
   (:import [clojure.lang ExceptionInfo])
   (:gen-class))
 
@@ -30,9 +30,9 @@
   (println (run (slurp file) file)))
 
 (defn run-prompt []
-  (println "Welcome to CljLoc.")
+  (println "Welcome to Cljlox.")
   (loop []
-    (print "cljloc> ")
+    (print "cljlox> ")
     (flush)
     (when-some [line (read-line)]
       (println (run line))

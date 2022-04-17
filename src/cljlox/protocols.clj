@@ -1,4 +1,4 @@
-(ns cljloc.protocols
+(ns cljlox.protocols
   (:require [clojure.string :as str]))
 
 (defprotocol IStringable

@@ -1,11 +1,11 @@
-(ns cljloc.evaluator
+(ns cljlox.evaluator
   "Evaluate AST."
-  (:require [cljloc.ast :as ast]
-            [cljloc.tokenizer]
-            [cljloc.protocols :refer [ICallable call IStringable tostring]]
-            [cljloc.macros :refer [with-out-err]])
-  (:import [cljloc.tokenizer Token]
-           [cljloc.ast
+  (:require [cljlox.ast :as ast]
+            [cljlox.tokenizer]
+            [cljlox.protocols :refer [ICallable call IStringable tostring]]
+            [cljlox.macros :refer [with-out-err]])
+  (:import [cljlox.tokenizer Token]
+           [cljlox.ast
             Expression Binary Unary Grouping Print Var Variable Assign Literal
             Block If Logical While Break Call LoxCallable Function
             Return LoxClassStatement Get Set This Super]
