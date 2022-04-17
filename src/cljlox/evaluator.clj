@@ -285,7 +285,7 @@
         :else
         (runtime-error (format "Undefined property '%s'." (:lexeme name)) {:token name})))
 
-(defn- get-prop [{:keys [fields methods] :as self} name]
+(defn- get-prop [{:keys [fields] :as self} name]
   (let [fields @fields]
     (if (contains? fields (:lexeme name))
       (get fields (:lexeme name))
