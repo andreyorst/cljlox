@@ -6,7 +6,7 @@
   (:import [cljloc.ast
             Binary Unary Grouping Literal Print Expression Var Variable
             Assign Block If Logical While Break Call Function Return
-            LoxClassStatement Get Set This]
+            LoxClassStatement Get Set This Super]
            [clojure.lang ExceptionInfo]))
 
 (defn- parse-error
@@ -50,6 +50,9 @@
       :semicolon [nil n]
       :fun (fn-declaration tokens n "function")
       :this [(This. token) n]
+      :super (let [[_ n] (consume tokens n :dot "Expect '.' after 'super'.")
+                   [method n] (consume tokens n :identifier "Expect superclass method name.")]
+               [(Super. token method) n])
       :eof
       [:eof n]
       (parse-error "Unsupported token" {:tokens tokens :n (dec n)}))))
@@ -186,8 +189,7 @@
     (let [token (get tokens n)]
       (case (:type token)
         (:eof | :right_brace)
-        [(Block. statements)
-         (second (consume tokens n :right_brace "Expect '}' after block."))]
+        [statements (second (consume tokens n :right_brace "Expect '}' after block."))]
         (let [[statement n] (declaration tokens n)]
           (if statement
             (recur (conj statements statement) n)
@@ -255,7 +257,8 @@
       :return (return-statement tokens n)
       :print (print-statement tokens n')
       :identifier (expression tokens n)
-      :left_brace (block tokens n')
+      :left_brace (let [[expressions n] (block tokens n')]
+                    [(Block. expressions) n])
       :break (break-statement tokens n)
       (expression tokens n))))
 
@@ -293,6 +296,11 @@
 
 (defn- class-declaration [tokens n]
   (let [[name n] (consume tokens n :identifier "Expected class name.")
+        [superclass n] (if (= :less (:type (current tokens n)))
+                         (consume tokens (inc n) :identifier "Expect superclass name.")
+                         [nil n])
+        superclass (when superclass
+                     (Variable. superclass))
         [_ n] (consume tokens n :left_brace "Expect '{' before class body.")
         [methods n]
         (loop [methods []
@@ -303,7 +311,7 @@
               (let [[method n] (fn-declaration tokens n "method")]
                 (recur (conj methods method) n)))))
         [_ n] (consume tokens n :right_brace "Expect '}' after class body.")]
-    [(LoxClassStatement. name methods) n]))
+    [(LoxClassStatement. name superclass methods) n]))
 
 (defn- declaration [tokens n]
   (try

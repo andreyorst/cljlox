@@ -129,11 +129,18 @@
   (tostring [_]
     "this"))
 
-(defrecord LoxClassStatement [^Token name, methods]
+(defrecord Super [^Token keyword, method]
+  IStringable
+  (tostring [_]
+    (format "super.%s" (tostring method))))
+
+(defrecord LoxClassStatement [^Token name, ^Variable superclass, methods]
   IStringable
   (tostring [_]
     (format "(class %s %s)"
-            (tostring name)
+            (if superclass
+              (format "(extends %s %s)" (tostring name) (tostring (:name superclass)))
+              (tostring name))
             (->> methods
                  (map tostring)
                  (str/join " ")))))

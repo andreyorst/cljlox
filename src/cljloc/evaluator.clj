@@ -1,20 +1,36 @@
 (ns cljloc.evaluator
   "Evaluate AST."
   (:require [cljloc.ast :as ast]
+            [cljloc.tokenizer]
             [cljloc.protocols :refer [ICallable call IStringable tostring]]
             [cljloc.macros :refer [with-out-err]])
-  (:import [cljloc.ast
+  (:import [cljloc.tokenizer Token]
+           [cljloc.ast
             Binary Unary Grouping Print Var Variable Assign Literal
             Block If Logical While Break Call LoxCallable Function
-            Return LoxClassStatement Get Set This]
+            Return LoxClassStatement Get Set This Super]
            [clojure.lang ExceptionInfo]))
 
 (def globals {"clock" (LoxCallable. 0 (fn [] (/ (System/currentTimeMillis) 1000.0)))})
-(def *global-env (atom {:values globals :enclosing nil}))
+(def *global-env (atom {:values globals :enclosing nil :global true}))
 
 (defn- make-env [parent]
   (atom {:enclosing parent
          :values {}}))
+
+(defn- env-def! [env var val]
+  (doto env
+    (swap! assoc-in
+           [:values (if (instance? Token var)
+                      (:lexeme var)
+                      var)]
+           val)))
+
+(defn- env-get [env var]
+  (get-in @env [:values (if (instance? Token var) (:lexeme var) var)]))
+
+(defn- env-contains? [env var]
+  (contains? (:values @env) (if (instance? Token var) (:lexeme var) var)))
 
 (defn- runtime-error
   ([msg]
@@ -25,7 +41,7 @@
 
 (extend-type LoxCallable
   ICallable
-  (call [{:keys [arity function]} arguments token env _]
+  (call [{:keys [arity function]} arguments token _ _]
     (if (= arity (count arguments))
       (apply function arguments)
       (runtime-error
@@ -111,11 +127,8 @@
 (extend-type Var
   IInterpretable
   (evaluate [{:keys [name initializer]} env locals]
-    (swap! env
-           assoc-in
-           [:values (:lexeme name)]
-           (when (some? initializer)
-             (evaluate initializer env locals)))
+    (env-def! env name (when (some? initializer)
+                         (evaluate initializer env locals)))
     nil))
 
 (defn- ancestor
@@ -126,11 +139,15 @@
       (recur (inc i) (:enclosing @env))
       env)))
 
+(defn- env-get-at [env distance name]
+  (let [env (ancestor env distance)]
+    (env-get env name)))
+
 (defn- lookup-variable [expr name env locals]
-  (get-in @(if-let [distance (get locals expr)]
+  (env-get (if-let [distance (get locals expr)]
              (ancestor env distance)
              *global-env)
-          [:values (:lexeme name)]))
+           name))
 
 (extend-type Variable
   IInterpretable
@@ -144,8 +161,8 @@
           env (if-let [distance (get locals expr)]
                 (ancestor env distance)
                 *global-env)]
-      (if (contains? (:values @env) (:lexeme name))
-        (swap! env assoc-in [:values (:lexeme name)] val)
+      (if (env-contains? env name)
+        (env-def! env name val)
         (runtime-error (format "Undefined variable '%s'." (:lexeme name)) {:token name}))
       nil)))
 
@@ -210,6 +227,9 @@
 (defprotocol IBind
   (bind [self, instance, env]))
 
+(defn- evaluate-exprs [exprs env locals]
+  (reduce (fn [_ expr] (evaluate expr env locals)) nil exprs))
+
 (defrecord LoxFunction [^Function declaration, arity, closure, initializer?]
   ICallable
   (call [{{:keys [name params body]} :declaration} args _ _ locals]
@@ -220,22 +240,22 @@
     (try
       (let [env (make-env closure)]
         (doseq [[arg val] (map vector params args)]
-          (swap! env assoc-in [:values (:lexeme (:name arg))] val))
-        (let [res (evaluate body env locals)]
+          (env-def! env (:name arg) val))
+        (let [res (evaluate-exprs body env locals)]
           (if initializer?
-            (get-in @closure [:values "this"])
+            (env-get closure "this")
             res)))
       (catch ExceptionInfo e
         (let [data (ex-data e)]
           (if (= :return (:type data))
             (if initializer?
-              (get-in @closure [:values "this"])
+              (env-get closure "this")
               (:value data))
             (throw e))))))
   IBind
   (bind [self instance env]
     (let [closure (make-env env)]
-      (swap! closure assoc-in [:values "this"] instance)
+      (env-def! closure "this" instance)
       (LoxFunction. (:declaration self) (:arity self) closure initializer?)))
   IStringable
   (tostring [_]
@@ -246,7 +266,7 @@
   (evaluate [{:keys [name params] :as self} env locals]
     (let [f (LoxFunction. self (count params) env false)]
       (when name
-        (swap! env assoc-in [:values (:lexeme name)] f))
+        (env-def! env name f))
       f)))
 
 (extend-type This
@@ -254,14 +274,22 @@
   (evaluate [self env locals]
     (lookup-variable self (:keyword self) env locals)))
 
-(defn get-prop [{:keys [fields methods] :as self} name env]
+(defn- get-class-method [{:keys [methods] :as self} name]
+  (cond (contains? methods (:lexeme name))
+        (let [method (get methods (:lexeme name))]
+          (bind method self (:closure method)))
+        (and (:superclass (:class self))
+             (contains? (:methods (:superclass (:class self))) (:lexeme name)))
+        (let [method (get (:methods (:superclass (:class self))) (:lexeme name))]
+          (bind method self (:closure method)))
+        :else
+        (runtime-error (format "Undefined property '%s'." (:lexeme name)) {:token name})))
+
+(defn- get-prop [{:keys [fields methods] :as self} name]
   (let [fields @fields]
-    (cond (contains? fields (:lexeme name))
-          (get fields (:lexeme name))
-          (contains? methods (:lexeme name))
-          (bind (get methods (:lexeme name)) self env)
-          :else
-          (runtime-error (format "Undefined property '%s'." (:lexeme name)) {:token name}))))
+    (if (contains? fields (:lexeme name))
+      (get fields (:lexeme name))
+      (get-class-method self name))))
 
 (defrecord LoxInstance [class fields methods]
   IStringable
@@ -274,7 +302,7 @@
     (let [obj (evaluate object env locals)]
       (when-not (instance? LoxInstance obj)
         (runtime-error "Only instances have properties." {:token name}))
-      (get-prop obj name env))))
+      (get-prop obj name))))
 
 (extend-type Set
   IInterpretable
@@ -284,7 +312,7 @@
         (runtime-error "Only instances have fields." {:token name}))
       (swap! (:fields obj) assoc (:lexeme name) (evaluate val env locals)))))
 
-(defrecord LoxClass [^String name, arity, methods]
+(defrecord LoxClass [^String name, superclass, arity, methods]
   IStringable
   (tostring [_]
     (format "#<class: %s>" name))
@@ -297,15 +325,36 @@
 
 (extend-type LoxClassStatement
   IInterpretable
-  (evaluate [{:keys [name methods]} env locals]
-    (swap! env assoc-in [:values (:lexeme name)] nil)
-    (let [methods (reduce (fn [methods method]
+  (evaluate [{:keys [name superclass methods]} env locals]
+    (let [superclass (when superclass
+                       (let [sc (evaluate superclass env locals)]
+                         (when-not (instance? LoxClass sc)
+                           (runtime-error "Superclass must be a class." {:token (:name superclass)}))
+                         sc))
+          _ (env-def! env name nil)
+          env (if superclass
+                (env-def! (make-env env) "super" superclass)
+                env)
+          methods (reduce (fn [methods method]
                             (assoc methods (:lexeme (:name method))
-                                   (LoxFunction. method (count (:params method)) env (= "init" (:lexeme (:name method))))))
+                                   (LoxFunction. method (count (:params method)) env
+                                                 (= "init" (:lexeme (:name method))))))
                           {} methods)
-          c (LoxClass. (:lexeme name) 0 methods)]
-      (swap! env assoc-in [:values (:lexeme name)] c)
+          c (LoxClass. (:lexeme name) superclass 0 methods)
+          env (if superclass
+                (:enclosing @env)
+                env)]
+      (env-def! env name c)
       c)))
+
+(extend-type Super
+  IInterpretable
+  (evaluate [{:keys [keyword method] :as expr} env locals]
+    (let [distance (get locals expr)
+          superclass (env-get-at env distance "super")
+          obj (env-get-at env (dec distance) "this")
+          method (get-class-method superclass method)]
+      (bind method obj env))))
 
 (defn interpret
   ([ast locals] (interpret ast locals "stdin"))
