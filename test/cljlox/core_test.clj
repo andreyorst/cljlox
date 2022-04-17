@@ -7,17 +7,17 @@
 
 (use-fixtures :each
   (fn [t]
-    (reset! evaluator/*global-env {:values evaluator/globals :enclosing nil})
+    (vreset! evaluator/*global-env {:values evaluator/globals :enclosing nil})
     (let [res (t)]
-      (reset! evaluator/*global-env {:values evaluator/globals :enclosing nil})
+      (vreset! evaluator/*global-env {:values evaluator/globals :enclosing nil})
       res)))
 
 (defn- clean-run [source]
-  (reset! evaluator/*global-env {:values evaluator/globals :enclosing nil})
+  (vreset! evaluator/*global-env {:values evaluator/globals :enclosing nil})
   (run source))
 
 (defn- clean-run-file [source]
-  (reset! evaluator/*global-env {:values evaluator/globals :enclosing nil})
+  (vreset! evaluator/*global-env {:values evaluator/globals :enclosing nil})
   (run-file source))
 
 (defn- clean-run-prompt []

@@ -12,19 +12,19 @@
            [clojure.lang ExceptionInfo]))
 
 (def globals {"clock" (LoxCallable. 0 (fn [] (/ (System/currentTimeMillis) 1000.0)))})
-(def *global-env (atom {:values globals :enclosing nil :global true}))
+(def *global-env (volatile! {:values globals :enclosing nil :global true}))
 
 (defn- make-env [parent]
-  (atom {:enclosing parent
-         :values {}}))
+  (volatile! {:enclosing parent
+              :values {}}))
 
 (defn- env-def! [env var val]
   (doto env
-    (swap! assoc-in
-           [:values (if (instance? Token var)
-                      (:lexeme var)
-                      var)]
-           val)))
+    (vswap! assoc-in
+            [:values (if (instance? Token var)
+                       (:lexeme var)
+                       var)]
+            val)))
 
 (defn- env-get [env var]
   (get-in @env [:values (if (instance? Token var) (:lexeme var) var)]))
@@ -310,7 +310,7 @@
     (let [obj (evaluate object env locals)]
       (when-not (instance? LoxInstance obj)
         (runtime-error "Only instances have fields." {:token name}))
-      (swap! (:fields obj) assoc (:lexeme name) (evaluate val env locals)))))
+      (vswap! (:fields obj) assoc (:lexeme name) (evaluate val env locals)))))
 
 (defrecord LoxClass [^String name, superclass, arity, methods]
   IStringable
@@ -318,7 +318,7 @@
     (format "#<class: %s>" name))
   ICallable
   (call [self args _ env locals]
-    (let [c (LoxInstance. self (atom {}) methods)]
+    (let [c (LoxInstance. self (volatile! {}) methods)]
       (if-some [method (or (get methods "init")
                            (get (:methods superclass) "init"))]
         (call (bind method c (:closure method)) args nil env locals)

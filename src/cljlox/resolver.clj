@@ -1,9 +1,9 @@
 (ns cljlox.resolver
   "Resolver for Lox AST.
 
-  Resolves each variable definition and usage with it's corresponding scope.
-  Stores the scope number in the `*locals` atom.
-  This atom is later used by evaluator to refer to locals."
+  Resolves each variable definition and usage with it's corresponding
+  scope.  Stores the scope number in the `locals` which is returned as
+  an artifacto of calling the resolver."
   (:require [cljlox.ast :as ast]
             [cljlox.protocols :refer [Resolver lox-resolve]])
   (:import [cljlox.ast
