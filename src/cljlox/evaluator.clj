@@ -1,15 +1,16 @@
 (ns cljlox.evaluator
   "Evaluate AST."
-  (:require [cljlox.ast :as ast]
-            [cljlox.tokenizer]
-            [cljlox.protocols :refer [ICallable call IStringable tostring]]
-            [cljlox.macros :refer [with-out-err]])
-  (:import [cljlox.tokenizer Token]
-           [cljlox.ast
-            Expression Binary Unary Grouping Print Var Variable Assign Literal
-            Block If Logical While Break Call LoxCallable Function
-            Return LoxClassStatement Get Set This Super]
-           [clojure.lang ExceptionInfo]))
+  (:require
+   [cljlox.ast]
+   [cljlox.macros :refer [with-out-err]]
+   [cljlox.protocols :refer [call ICallable IStringable tostring]]
+   [cljlox.tokenizer])
+  (:import
+   (cljlox.ast Assign Binary Block Break Call Expression Function
+               Get Grouping If Literal Logical LoxCallable LoxClassStatement
+               Print Return Set Super This Unary Var Variable While)
+   (cljlox.tokenizer Token)
+   (clojure.lang ExceptionInfo)))
 
 (def globals {"clock" (LoxCallable. 0 (fn [] (/ (System/currentTimeMillis) 1000.0)))})
 (def *global-env (volatile! {:values globals :enclosing nil :global true}))
@@ -50,9 +51,9 @@
 
 (extend-protocol ICallable
   Object
-  (call [self & rest] (runtime-error (format "Can only call functions and classes. Tried to call %s" (class self))))
+  (call [self & _] (runtime-error (format "Can only call functions and classes. Tried to call %s" (class self))))
   nil
-  (call [self & rest] (runtime-error "Can only call functions and classes. Tried to call nil.")))
+  (call [& _] (runtime-error "Can only call functions and classes. Tried to call nil.")))
 
 (defn- truth? [val]
   (if (some? val)
@@ -168,7 +169,7 @@
 
 (extend-type Break
   IInterpretable
-  (evaluate [{:keys [break]} env _]
+  (evaluate [{:keys [break]} _ _]
     (throw (ex-info "break" {:type :break :token break}))))
 
 (extend-type Block
@@ -194,7 +195,7 @@
         :or (if (truth? left)
               left
               (evaluate right env locals))
-        :and (if (not (truth? left))
+        :and (if-not (truth? left)
                left
                (evaluate right env locals))
         (runtime-error "Unsupported logical operator" {:token operator})))))
@@ -206,8 +207,7 @@
       (while (truth? (evaluate condition env locals))
         (evaluate body env locals))
       (catch ExceptionInfo e
-        (if (= :break (:type (ex-data e)))
-          nil
+        (when-not (= :break (:type (ex-data e)))
           (throw e))))))
 
 (extend-type Call
@@ -219,7 +219,7 @@
 
 (extend-type Return
   IInterpretable
-  (evaluate [{:keys [keyword value] :as self} env locals]
+  (evaluate [{:keys [keyword value]} env locals]
     (throw (ex-info "return" {:type :return,
                               :value (when value (evaluate value env locals))
                               :token keyword}))))
@@ -263,7 +263,7 @@
 
 (extend-type Function
   IInterpretable
-  (evaluate [{:keys [name params] :as self} env locals]
+  (evaluate [{:keys [name params] :as self} env _]
     (let [f (LoxFunction. self (count params) env false)]
       (when name
         (env-def! env name f))
@@ -350,7 +350,7 @@
 
 (extend-type Super
   IInterpretable
-  (evaluate [{:keys [keyword method] :as expr} env locals]
+  (evaluate [{:keys [method] :as expr} env locals]
     (let [distance (get locals expr)
           superclass (env-get-at env distance "super")
           obj (env-get-at env (dec distance) "this")

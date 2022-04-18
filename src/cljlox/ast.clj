@@ -1,9 +1,10 @@
 (ns cljlox.ast
-  (:require [cljlox.protocols :refer [IStringable tostring]]
-            [cljlox.tokenizer]
-            [clojure.string :as str])
-  (:import [cljlox.tokenizer Token])
-  (:gen-class))
+  (:require
+   [cljlox.protocols :refer [IStringable tostring]]
+   [cljlox.tokenizer]
+   [clojure.string :as str])
+  (:import
+   (cljlox.tokenizer Token)))
 
 (defrecord Binary [left, ^Token operator, right]
   IStringable

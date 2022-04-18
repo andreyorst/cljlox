@@ -1,6 +1,7 @@
 (ns cljlox.core
-  (:require [cljlox.runner :refer [run-file run-prompt]])
-  (:gen-class))
+  (:gen-class)
+  (:require
+   [cljlox.runner :refer [run-file run-prompt]]))
 
 (defn -main [& args]
   (try

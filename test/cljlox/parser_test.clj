@@ -1,8 +1,9 @@
 (ns cljlox.parser-test
-  (:require [cljlox.parser :refer [parse]]
-            [cljlox.tokenizer :refer [tokenize map->Token]]
-            [cljlox.ast :refer [map->Binary map->Literal]]
-            [clojure.test :refer [deftest is testing]]))
+  (:require
+   [cljlox.ast :refer [map->Binary map->Literal]]
+   [cljlox.parser :refer [parse]]
+   [cljlox.tokenizer :refer [map->Token tokenize]]
+   [clojure.test :refer [deftest is testing]]))
 
 (deftest parser-test
   (testing "basic parsing"

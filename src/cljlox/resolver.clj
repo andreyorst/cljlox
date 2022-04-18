@@ -4,12 +4,13 @@
   Resolves each variable definition and usage with it's corresponding
   scope.  Stores the scope number in the `locals` which is returned as
   an artifacto of calling the resolver."
-  (:require [cljlox.ast :as ast]
-            [cljlox.protocols :refer [Resolver lox-resolve]])
-  (:import [cljlox.ast
-            Expression Binary Unary Grouping Print Var Variable Assign Literal
-            Block If Logical While Break Call Function Return
-            LoxClassStatement Get Set This Super]))
+  (:require
+   [cljlox.ast :as ast]
+   [cljlox.protocols :refer [lox-resolve Resolver]])
+  (:import
+   (cljlox.ast Assign Binary Block Break Call Expression Function
+               Get Grouping If Literal Logical LoxClassStatement
+               Print Return Set Super This Unary Var Variable While)))
 
 (defn- resolve-error
   ([msg]
@@ -25,8 +26,8 @@
   (doseq [[var status] (peek scopes)]
     (when (and (not= status :used)
                (not (re-find #"^_" var))
-               (not (= "this" var))
-               (not (= "super" var)))
+               (not= "this" var)
+               (not= "super" var))
       (resolve-error (format "Unused local variable: '%s'. Start variable name with underscore if variable is unused." var))))
   (update state :scopes pop))
 
@@ -111,7 +112,7 @@
 
 (extend-type Function
   Resolver
-  (lox-resolve [{:keys [params name body] :as expr} state]
+  (lox-resolve [{:keys [name] :as expr} state]
     (cond->> state
       (some? name) (declare-var name)
       (some? name) (define-var name)
@@ -215,8 +216,7 @@
                                 state))
                              (update (begin-scope state) :scopes scope-set "this" true))
                      end-scope)]
-      (-> (if superclass (end-scope state) state)
-          (assoc :class enclosing-class)))))
+      (assoc (if superclass (end-scope state) state) :class enclosing-class))))
 
 (extend-type Get
   Resolver

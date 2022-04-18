@@ -1,6 +1,7 @@
 (ns cljlox.core-test
-  (:require [cljlox.core :refer [-main]]
-            [clojure.test :refer [deftest is testing]]))
+  (:require
+   [cljlox.core :refer [-main]]
+   [clojure.test :refer [deftest is testing]]))
 
 (deftest main-test
   (testing "main expects only one file"

@@ -1,10 +1,12 @@
 (ns cljlox.runner
-  (:require [cljlox.tokenizer :refer [tokenize]]
-            [cljlox.parser :refer [parse]]
-            [cljlox.evaluator :refer [interpret]]
-            [cljlox.resolver :refer [resolve-expr] :as resolver]
-            [cljlox.macros :refer [with-out-err]])
-  (:import [clojure.lang ExceptionInfo]))
+  (:require
+   [cljlox.evaluator :refer [interpret]]
+   [cljlox.macros :refer [with-out-err]]
+   [cljlox.parser :refer [parse]]
+   [cljlox.resolver :as resolver :refer [resolve-expr]]
+   [cljlox.tokenizer :refer [tokenize]])
+  (:import
+   (clojure.lang ExceptionInfo)))
 
 (defn- log-resolver-error [fmt [line col] message]
   (println

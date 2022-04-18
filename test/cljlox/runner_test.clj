@@ -1,9 +1,9 @@
 (ns cljlox.runner-test
-  (:require [cljlox.runner :refer [run-source run-file]]
-            [clojure.test :refer [deftest is testing use-fixtures]]
-            [cljlox.evaluator :as evaluator]
-            [clojure.string :as str])
-  (:import [clojure.lang ExceptionInfo]))
+  (:require
+   [cljlox.evaluator :as evaluator]
+   [cljlox.runner :refer [run-file run-source]]
+   [clojure.string :as str]
+   [clojure.test :refer [deftest is testing use-fixtures]]))
 
 (use-fixtures :each
   (fn [t]
@@ -121,7 +121,7 @@
     (is (nil? (clean-run "while (true) return;"))))
   (testing "function with more than 255 arguments"
     (is (nil? (clean-run (str "fun f (" (->> (range 256) (map #(str "x" %)) (str/join ", ")) ") {}"))))
-    (is (nil? (clean-run (str "f(" (->> (range 256) (clojure.string/join ", ")) ")"))))))
+    (is (nil? (clean-run (str "f(" (clojure.string/join ", " (range 256)) ")"))))))
 
 (deftest closure-test
   (testing "returning anonymous function that closes over a function argument"

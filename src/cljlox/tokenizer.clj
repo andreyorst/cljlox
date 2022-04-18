@@ -1,7 +1,8 @@
 (ns cljlox.tokenizer
   "Tokenizer."
-  (:require [clojure.string :as str]
-            [cljlox.protocols :refer [IStringable]]))
+  (:require
+   [cljlox.protocols :refer [IStringable]]
+   [clojure.string :as str]))
 
 (defrecord TokenizerError [line col source message]
   Object

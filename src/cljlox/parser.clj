@@ -1,13 +1,14 @@
 (ns cljlox.parser
   "A recursive descent parser.
   Main entry point is the `parse` function."
-  (:require [cljlox.ast :as ast]
-            [cljlox.macros :refer [with-out-err]])
-  (:import [cljlox.ast
-            Binary Unary Grouping Literal Print Expression Var Variable
-            Assign Block If Logical While Break Call Function Return
-            LoxClassStatement Get Set This Super]
-           [clojure.lang ExceptionInfo]))
+  (:require
+   [cljlox.ast :as ast]
+   [cljlox.macros :refer [with-out-err]])
+  (:import
+   (cljlox.ast Assign Binary Block Break Call Expression Function
+               Get Grouping If Literal Logical LoxClassStatement
+               Print Return Set Super This Unary Var Variable While)
+   (clojure.lang ExceptionInfo)))
 
 (declare expression)
 (declare fn-declaration)

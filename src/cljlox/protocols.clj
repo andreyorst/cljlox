@@ -1,5 +1,6 @@
 (ns cljlox.protocols
-  (:require [clojure.string :as str]))
+  (:require
+   [clojure.string :as str]))
 
 (defprotocol IStringable
   (tostring [self]))

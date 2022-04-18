@@ -1,9 +1,11 @@
 (ns cljlox.ast-test
-  (:require [cljlox.ast :as ast]
-            [cljlox.tokenizer]
-            [cljlox.protocols :refer [tostring]]
-            [clojure.test :refer [deftest is testing]])
-  (:import [cljlox.tokenizer Token]))
+  (:require
+   [cljlox.ast :as ast]
+   [cljlox.protocols :refer [tostring]]
+   [cljlox.tokenizer]
+   [clojure.test :refer [deftest is testing]])
+  (:import
+   (cljlox.tokenizer Token)))
 
 (def var-a (Token. :variable "a" nil [0 0]))
 (def var-b (Token. :variable "b" nil [0 0]))
